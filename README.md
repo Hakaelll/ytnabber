@@ -10,7 +10,7 @@ Get the **Windows x64 installer** from [GitHub Releases](https://github.com/Haka
 
 Windows 10 or 11 and Microsoft Edge WebView2 are required. If WebView2 is missing, the installer downloads Microsoft's runtime. yt-dlp, Deno and FFmpeg are already included: no terminal, Python installation or manual PATH setup is needed.
 
-The initial release is unsigned. Its SHA-256 checksum is published with the installer; verify that you downloaded it from this repository.
+The initial release is unsigned. Download the installer from this repository.
 
 ## Use
 
