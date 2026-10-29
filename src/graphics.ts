@@ -7,22 +7,43 @@ const TAU = Math.PI * 2;
 const alphabet = "01aexz{}[]<>/+=:;*";
 
 export function startGraphics(background: HTMLCanvasElement, emblem: HTMLCanvasElement): () => void {
-  const field = background.getContext("2d", { alpha: false });
-  const mark = emblem.getContext("2d");
+  const field = background.getContext("2d", { alpha: false, willReadFrequently: true });
+  const mark = emblem.getContext("2d", { willReadFrequently: true });
   if (!field || !mark) return () => {};
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   const atlas = document.createElement("canvas");
   atlas.width = alphabet.length * 12;
   atlas.height = 28;
-  const ink = atlas.getContext("2d")!;
-  ink.font = "9px Consolas, monospace";
+  const ink = atlas.getContext("2d", { willReadFrequently: true })!;
+  ink.fillStyle = "#fff";
   ink.textBaseline = "top";
-  for (let i = 0; i < alphabet.length; i++) {
-    ink.fillStyle = "#c3c7cb";
-    ink.fillText(alphabet[i], i * 12 + 2, 1);
-    ink.fillStyle = "#9bb4c9";
-    ink.fillText(alphabet[i], i * 12 + 2, 15);
+  for (let row = 0; row < 2; row++) {
+    ink.font = (row ? "9" : "7") + "px Consolas, monospace";
+    for (let i = 0; i < alphabet.length; i++) ink.fillText(alphabet[i], i * 12, row * 14);
   }
+  const atlasData = ink.getImageData(0, 0, atlas.width, atlas.height).data;
+  const masks: { x: number; y: number; coverage: number }[][] = [];
+  for (let row = 0; row < 2; row++) for (let glyph = 0; glyph < alphabet.length; glyph++) {
+    const mask = [];
+    for (let y = 0; y < 14; y++) for (let x = 0; x < 10; x++) {
+      const alpha = atlasData[((row * 14 + y) * atlas.width + glyph * 12 + x) * 4 + 3];
+      if (alpha > 8) mask.push({ x, y, coverage: Math.max(1, alpha >>> 4) });
+    }
+    masks.push(mask);
+  }
+  // Preblend glyph ink once; a frame needs two canvas uploads instead of thousands of draw calls.
+  const colors = new Uint32Array(2 * 64 * 16);
+  for (let blue = 0; blue < 2; blue++) for (let level = 0; level < 64; level++) for (let coverage = 0; coverage < 16; coverage++) {
+    const alpha = level / 128 * coverage / 15;
+    const r = Math.round(8 + ((blue ? 155 : 195) - 8) * alpha);
+    const g = Math.round(9 + ((blue ? 180 : 199) - 9) * alpha);
+    const b = Math.round(10 + ((blue ? 201 : 203) - 10) * alpha);
+    colors[(blue * 64 + level) * 16 + coverage] = (255 << 24) | (b << 16) | (g << 8) | r;
+  }
+  let fieldImage: ImageData;
+  let fieldPixels: Uint32Array;
+  const markImage = mark.createImageData(360, 360);
+  const markPixels = new Uint32Array(markImage.data.buffer);
   // Front and rear surfaces share the original mask; edge layers give the rays actual thickness.
   const points: Point[] = [];
   for (const [x, y, edge] of sourcePoints) {
@@ -36,6 +57,7 @@ export function startGraphics(background: HTMLCanvasElement, emblem: HTMLCanvasE
   }
   let width = 0, height = 0, frame = 0, previous = 0, elapsed = 0;
   let nextWave = 1.5;
+  let lastField = -1;
   let glyphs: Glyph[] = [];
   let waves: Wave[] = [];
   let seed = 41;
@@ -44,9 +66,7 @@ export function startGraphics(background: HTMLCanvasElement, emblem: HTMLCanvasE
 
   function drawField(time: number) {
     if (!field) return;
-    field.globalAlpha = 1;
-    field.fillStyle = "#08090a";
-    field.fillRect(0, 0, width, height);
+    fieldPixels.fill(0xff0a0908);
     const span = Math.max(1, Math.min(width, height));
     const drift = time * 0.065;
     for (const g of glyphs) {
@@ -77,22 +97,30 @@ export function startGraphics(background: HTMLCanvasElement, emblem: HTMLCanvasE
       const breathe = 0.85 + Math.sin(time * 0.14 + g.phase) * 0.15;
       const opacity = Math.min(0.46, (0.045 + ribbon * 0.27) * depth * hollow * breathe + light * 0.28);
       if (opacity < 0.025) continue;
-      const size = 6.6 + g.depth * 2.1;
-      field.globalAlpha = opacity;
-      field.drawImage(atlas, g.glyph * 12, light > 0.08 ? 14 : 0, 12, 14, x, y, size, size * 14 / 12);
+      const level = Math.min(63, Math.round(opacity * 128));
+      const palette = ((light > 0.08 ? 64 : 0) + level) * 16;
+      const mask = masks[g.glyph + (g.depth > 0.55 ? alphabet.length : 0)];
+      const left = Math.round(x), top = Math.round(y);
+      for (const pixel of mask) {
+        const px = left + pixel.x, py = top + pixel.y;
+        if (px < 0 || py < 0 || px >= width || py >= height) continue;
+        const index = py * width + px;
+        const color = colors[palette + pixel.coverage];
+        if ((color & 255) > (fieldPixels[index] & 255)) fieldPixels[index] = color;
+      }
     }
-    field.globalAlpha = 1;
+    field.putImageData(fieldImage, 0, 0);
   }
 
   function drawEmblem(time: number) {
     if (!mark) return;
-    mark.clearRect(0, 0, symbolSize, symbolSize);
+    markPixels.fill(0);
     // Negative Y rotation moves the front surface to the right; the artwork is never mirrored.
     const angle = reduced.matches ? -0.28 : -0.28 - time * 0.15;
     const cy = Math.cos(angle), sy = Math.sin(angle);
     const tilt = -0.16 + Math.sin(time * 0.07) * 0.035;
     const cx = Math.cos(tilt), sx = Math.sin(tilt);
-    mark.fillStyle = "#d6e2ef";
+
     for (const p of points) {
       const rx = p.x * cy + p.z * sy;
       const rz = -p.x * sy + p.z * cy;
@@ -101,23 +129,41 @@ export function startGraphics(background: HTMLCanvasElement, emblem: HTMLCanvasE
       const perspective = 4.2 / (4.2 + z);
       const facing = p.face === 0 ? 0.5 + Math.abs(sy) * 0.4 : Math.max(0.1, -p.face * cy);
       const light = (p.edge ? 0.55 : 0.3) + facing * 0.34;
-      mark.globalAlpha = Math.min(0.94, light * (0.8 - z * 0.16));
-      const size = (p.edge ? 1.4 : 1.2) * perspective;
-      mark.fillRect(180 + rx * 163 * perspective, 180 + ry * 163 * perspective, size, size);
+      const opacity = Math.min(0.94, light * (0.8 - z * 0.16));
+      const x = 180 + rx * 163 * perspective, y = 180 + ry * 163 * perspective;
+      const left = Math.floor(x), top = Math.floor(y);
+      const fx = x - left, fy = y - top;
+      // Bilinear coverage keeps subpixel rotation smooth at the emblem's compact display size.
+      for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+        const px = left + dx, py = top + dy;
+        if (px < 0 || py < 0 || px >= symbolSize || py >= symbolSize) continue;
+        const index = py * symbolSize + px;
+        const alpha = Math.min(255, Math.round(opacity * (dx ? fx : 1 - fx) * (dy ? fy : 1 - fy) * 460));
+        if (alpha > (markPixels[index] >>> 24)) markPixels[index] = (alpha << 24) | 0x00efe2d6;
+      }
     }
-    mark.globalAlpha = 1;
+    mark.putImageData(markImage, 0, 0);
   }
-  function draw() { drawField(elapsed); drawEmblem(elapsed); }
+  function draw() {
+    if (lastField < 0 || elapsed - lastField >= 0.075 || reduced.matches) {
+      drawField(elapsed);
+      lastField = elapsed;
+    }
+    drawEmblem(elapsed);
+  }
   function resize() {
-    width = background.clientWidth;
-    height = background.clientHeight;
-    const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
-    background.width = Math.round(width * ratio);
-    background.height = Math.round(height * ratio);
-    field!.setTransform(ratio, 0, 0, ratio, 0, 0);
+    // The atmospheric field stays at logical resolution; high-DPI text sharpness is unnecessary here.
+    const scale = Math.min(1, 1000 / background.clientWidth, 1200 / background.clientHeight);
+    width = Math.round(background.clientWidth * scale);
+    height = Math.round(background.clientHeight * scale);
+    background.width = width;
+    background.height = height;
+    fieldImage = field!.createImageData(width, height);
+    fieldPixels = new Uint32Array(fieldImage.data.buffer);
     emblem.width = symbolSize;
     emblem.height = symbolSize;
     seed = 41;
+    lastField = -1;
     const step = Math.max(6.5, Math.sqrt(width * height / 9000));
     glyphs = [];
     for (let y = -24; y < height + 24; y += step) {
@@ -159,5 +205,3 @@ export function startGraphics(background: HTMLCanvasElement, emblem: HTMLCanvasE
     reduced.removeEventListener("change", resume);
   };
 }
-
-

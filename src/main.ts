@@ -18,7 +18,7 @@ const folderIcon = '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><pat
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <canvas id="field" aria-hidden="true"></canvas>
   <header class="titlebar">
-    <div class="brand" data-tauri-drag-region><img src="/logo.png" alt="" width="19" height="19"><span data-tauri-drag-region>ytnabber</span></div>
+    <div class="brand"><img src="/logo.png" alt="" width="19" height="19"><span>ytnabber</span></div>
     <div class="window-actions">
       <button id="minimize" aria-label="Minimize" title="Minimize"><svg viewBox="0 0 16 16"><path d="M3 8.5h10"/></svg></button>
       <button id="maximize" aria-label="Maximize or restore" title="Maximize or restore"><svg viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx=".5"/></svg></button>
@@ -30,8 +30,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <section class="workspace" aria-label="Video download">
       <form id="source-form" class="source-form" autocomplete="off">
         <label class="sr-only" for="url">Video URL</label>
-        <div class="url-control">${linkIcon}<input id="url" type="url" placeholder="Paste a video link" spellcheck="false" autocomplete="off" required aria-describedby="source-hint"><button id="load" type="submit" aria-label="Load video" title="Load video"><svg viewBox="0 0 20 20" fill="none"><path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
-        <div id="source-hint" class="source-hint"><span id="loading" hidden><span class="spinner"></span>Getting video info</span></div>
+        <div class="url-control">${linkIcon}<input id="url" type="url" placeholder="Paste a video link" spellcheck="false" autocomplete="off" required aria-describedby="source-hint"><button id="load" type="submit" aria-label="Load video" title="Load video"><svg viewBox="0 0 20 20" fill="none"><path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="loading-orbit" aria-hidden="true"></span></button></div>
+        <div id="source-hint" class="source-hint"><span id="loading" hidden><span class="loading-signal" aria-hidden="true"><i></i><i></i><i></i></span>Getting video info</span></div>
       </form>
       <section id="details" class="details" aria-label="Selected video" inert>
         <div class="preview"><img id="thumbnail" alt="" referrerpolicy="no-referrer"><div class="preview-fallback" id="preview-fallback">Preview unavailable</div><span id="duration" class="duration"></span></div>
@@ -74,6 +74,14 @@ let stopped = false;
 
 startGraphics(element<HTMLCanvasElement>("field"), element<HTMLCanvasElement>("emblem"));
 
+function fitQualityMenu() {
+  quality.style.setProperty("--quality-space", Math.max(54, window.innerHeight - quality.getBoundingClientRect().bottom - 14) + "px");
+}
+quality.addEventListener("pointerdown", fitQualityMenu);
+quality.addEventListener("keydown", fitQualityMenu);
+window.addEventListener("resize", fitQualityMenu);
+main.addEventListener("scroll", fitQualityMenu, { passive: true });
+
 function message(text: string, kind = "info", retry = false) {
   element("message").hidden = !text;
   element("message").dataset.kind = kind;
@@ -81,9 +89,13 @@ function message(text: string, kind = "info", retry = false) {
   element("message-text").textContent = text;
   element("open-folder").hidden = kind !== "success";
   element("retry").hidden = !retry;
+  if (text) requestAnimationFrame(() => element("message").scrollIntoView({
+    block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+  }));
 }
 function setLoading(value: boolean) {
   loading = value;
+  element("source-form").classList.toggle("is-loading", value);
   element("loading").hidden = !value;
   load.classList.toggle("is-loading", value);
   load.setAttribute("aria-busy", String(value));
@@ -212,8 +224,8 @@ if (isTauri()) {
     if (request) await invoke("cancel_job", { kind: "metadata", requestId: request }).catch(() => {});
     await window.close();
   });
-  document.querySelector(".titlebar")!.addEventListener("pointerdown", event => {
-    if ((event.target as HTMLElement).closest("button")) return;
+  document.querySelector<HTMLElement>(".titlebar")!.addEventListener("pointerdown", event => {
+    if (event.button !== 0 || (event.target as HTMLElement).closest("button")) return;
     void window.startDragging();
   });
   await listen<Progress>("download-progress", ({ payload }) => {
@@ -241,5 +253,3 @@ if (isTauri()) {
 }
 setLoading(false);
 input.focus();
-
-
