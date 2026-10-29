@@ -293,7 +293,7 @@ pub fn download_args(
     args.extend(crate::model::format_args(format, height));
     args.extend([
         "--no-overwrites".into(),
-        "--no-continue".into(),
+        "--continue".into(),
         "--no-simulate".into(),
         "--newline".into(),
         "--progress".into(),

@@ -31,6 +31,7 @@ struct AppState {
     last_file: Mutex<Option<PathBuf>>,
     latest_metadata: AtomicU64,
     retry_at: Mutex<Option<std::time::Instant>>,
+    recovery: Mutex<Option<(model::DownloadKey, PathBuf)>>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -125,6 +126,7 @@ async fn inspect_media(
 ) -> Result<Media, Failure> {
     let url = model::validate_url(&url)?;
     let root = engine::engine_dir(&app)?;
+    let executable = updater::executable(&app, &root)?;
     let cancel = begin(&state, "metadata", request_id)?;
     let mut args = engine::base_args(&root);
     args.extend([
@@ -134,7 +136,6 @@ async fn inspect_media(
         url.clone(),
     ]);
     let events = app.clone();
-    let executable = updater::executable(&app, &root)?;
     let result = engine::run_process(
         executable,
         args,
@@ -303,12 +304,30 @@ async fn download(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    let staging = folder.join(format!(".ytnabber-{}-{nonce}", std::process::id()));
+    let key = model::DownloadKey {
+        url: selected.url.clone(),
+        folder: folder.clone(),
+        format,
+        height,
+        audio_bitrate: audio_bitrate.unwrap_or(192),
+    };
+    let recovery = state
+        .recovery
+        .lock()
+        .unwrap()
+        .clone()
+        .filter(|(old, path)| *old == key && path.is_dir());
+    let resuming = recovery.is_some();
+    let staging = recovery
+        .map(|(_, path)| path)
+        .unwrap_or_else(|| folder.join(format!(".ytnabber-{}-{nonce}", std::process::id())));
     let mut created_staging = false;
     let result = async {
-        fs::create_dir(&staging).map_err(|e| {
-            format!("Could not write to this folder (check permissions and free space): {e}")
-        })?;
+        if !resuming {
+            fs::create_dir(&staging).map_err(|e| {
+                format!("Could not write to this folder (check permissions and free space): {e}")
+            })?;
+        }
         created_staging = true;
         let mut args = engine::download_args(&root, format, height, &staging, &selected.url);
         if let Some(bitrate) = audio_bitrate {
@@ -352,10 +371,21 @@ async fn download(
         Ok::<_, String>(target.to_string_lossy().into_owned())
     }
     .await;
-    // Only this operation's newly-created staging directory is ever removed.
+    // Recovery only reuses a directory previously created by this app instance for this exact request.
     if created_staging && (result.is_ok() || result.as_ref().is_err_and(|e| e == engine::CANCELLED))
     {
         let _ = fs::remove_dir_all(&staging);
+        if state
+            .recovery
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|(old, _)| *old == key)
+        {
+            *state.recovery.lock().unwrap() = None;
+        }
+    } else if created_staging {
+        *state.recovery.lock().unwrap() = Some((key, staging.clone()));
     }
     finish(&state, "download", request_id);
     result

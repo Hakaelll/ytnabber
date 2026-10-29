@@ -21,7 +21,7 @@ pub struct Selection {
     pub media: Media,
 }
 
-#[derive(Clone, Copy, Deserialize, PartialEq, Debug)]
+#[derive(Clone, Copy, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum Format {
     Mp4,
@@ -35,6 +35,15 @@ impl Format {
     pub fn is_video(self) -> bool {
         matches!(self, Self::Mp4 | Self::Source)
     }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct DownloadKey {
+    pub url: String,
+    pub folder: std::path::PathBuf,
+    pub format: Format,
+    pub height: Option<u32>,
+    pub audio_bitrate: u16,
 }
 
 #[derive(Clone, Serialize, Debug)]
@@ -283,5 +292,40 @@ mod tests {
         assert!(format_args(Format::Mp4, Some(1080))[1].contains("[vcodec^=avc1]"));
         assert!(format_args(Format::M4a, None)[1].contains("[acodec^=mp4a]"));
         assert!(format_args(Format::Mp3, None).contains(&"192K".to_owned()));
+    }
+    #[test]
+    fn recovery_keys_separate_sources_formats_destinations_and_qualities() {
+        let key = DownloadKey {
+            url: "https://example.org/a".into(),
+            folder: "C:/Downloads".into(),
+            format: Format::Mp3,
+            height: None,
+            audio_bitrate: 192,
+        };
+        let mut other = key.clone();
+        assert!(key == other);
+        other.audio_bitrate = 320;
+        assert!(key != other);
+        other = key.clone();
+        other.url.push('b');
+        assert!(key != other);
+        other = key.clone();
+        other.format = Format::M4a;
+        assert!(key != other);
+        other = key.clone();
+        other.folder.push("other");
+        assert!(key != other);
+        other = key.clone();
+        other.height = Some(720);
+        assert!(key != other);
+        let args = crate::engine::download_args(
+            std::path::Path::new("C:/Tools with spaces"),
+            Format::Mp3,
+            None,
+            std::path::Path::new("C:/Downloads"),
+            &key.url,
+        );
+        assert!(args.contains(&"--continue".into()));
+        assert!(!args.contains(&"--no-continue".into()));
     }
 }

@@ -175,6 +175,22 @@ test downloaded an officially verified older engine, checked/installed
 byte-identical. Clippy passed with warnings denied. This does not constitute
 a Windows installer upgrade test.
 
+### Interrupted downloads
+
+A repeat of the same URL, destination, format, resolution and bitrate within
+the same app session reuses that operation's retained staging directory and
+yt-dlp's documented continuation support. Other requests cannot reuse it.
+Already completed compatible conversions are probed and reused. Incomplete
+conversion outputs can be replaced only inside that owned staging directory;
+their source input is retained until publication succeeds.
+
+Recovery keys and continuation arguments have regression tests. The real
+offline codec test also repeats the MP4 processing path and confirms that
+the validated conversion's timestamp does not change. Reopening the app
+does not automatically discover old staging directories; retained files can
+be recovered manually using the path in error details. Explicit cancellation
+cleans its staging; failed network/conversion operations preserve it.
+
 Baseline figures above were measured in this run. Historical 0.1.0 checks are
 recorded separately in VERIFICATION.md and are not fresh 0.1.1 results.
 Clean Windows 10/11 installation, upgrade/uninstall and real player checks

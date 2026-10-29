@@ -86,6 +86,19 @@ pub async fn prepare(
         "{}.compatible.mp4",
         file.file_stem().unwrap_or_default().to_string_lossy()
     ));
+    if output.is_file() {
+        if probe(root, &output, cancel.clone())
+            .await
+            .is_ok_and(|info| validate(&info, format).is_ok())
+        {
+            return Ok(output);
+        }
+        if *cancel.borrow() {
+            return Err(crate::engine::CANCELLED.into());
+        }
+        std::fs::remove_file(&output)
+            .map_err(|e| format!("Could not replace an incomplete conversion: {e}"))?;
+    }
     let mut args: Vec<String> = ["-hide_banner", "-loglevel", "error", "-nostdin", "-n", "-i"]
         .into_iter()
         .map(str::to_owned)

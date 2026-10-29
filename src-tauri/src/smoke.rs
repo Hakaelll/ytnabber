@@ -141,11 +141,26 @@ async fn real_engines_offline_codec_conversion() {
         let file = engine::run(&root, args, cancel.clone(), 90, false, |_| {})
             .await
             .unwrap();
-        let file = crate::media::prepare(&root, Path::new(&file), format, cancel.clone())
+        let original_file = PathBuf::from(&file);
+        let file = crate::media::prepare(&root, &original_file, format, cancel.clone())
             .await
             .unwrap();
         let info = probe(&root, &file);
         crate::media::validate(&info, format).unwrap();
+        if format == Format::Mp4 {
+            let modified = file.metadata().unwrap().modified().unwrap();
+            assert_eq!(
+                crate::media::prepare(&root, &original_file, format, cancel.clone())
+                    .await
+                    .unwrap(),
+                file
+            );
+            assert_eq!(
+                file.metadata().unwrap().modified().unwrap(),
+                modified,
+                "A valid recovered conversion must be reused"
+            );
+        }
         if format == Format::Source {
             assert!(info["streams"]
                 .as_array()
