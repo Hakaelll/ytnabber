@@ -34,7 +34,8 @@
     ],
     "resources": {
       "engines/": "engines/",
-      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
+      "../licenses/": "licenses/"
     },
     "icon": [
       "icons/32x32.png",

@@ -1,13 +1,12 @@
 # Third-party notices
 
-ytnabber launches these separate, unmodified executables. They are not linked into its Rust binary.
+ytnabber launches the following separate, unmodified executables. They are not linked into its Rust binary.
 
-- **yt-dlp 2026.10.26** — Unlicense; the Windows executable includes additional components under their respective licenses. [Project and third-party license details](https://github.com/yt-dlp/yt-dlp/tree/2026.10.26). Its official executable includes the matching EJS challenge scripts.
-- **Deno 2.9.8** — MIT, with third-party components. [License and source](https://github.com/denoland/deno/tree/v2.9.8).
-- **FFmpeg N-128142-g28fda48e0b** — LGPL build from BtbN, as linked by [ffmpeg.org](https://ffmpeg.org/download.html). [Build recipe, patches, and source retrieval scripts](https://github.com/BtbN/FFmpeg-Builds). [Corresponding FFmpeg source](https://github.com/FFmpeg/FFmpeg/tree/28fda48e0b). [LGPL 2.1](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html). Archive license files accompany the binaries. This build excludes GPL and nonfree components.
-- **Tauri, Vite, TypeScript, and Rust crates** — see their published license metadata and the committed lockfiles.
+- **yt-dlp 2026.10.26**: yt-dlp's source is under the Unlicense. The official PyInstaller Windows executable includes GPLv3+ code and is distributed under GPLv3+ as a combined work. See licenses/yt-dlp.txt, licenses/yt-dlp-third-party.txt and licenses/GPL-3.0.txt.
+- **Deno 2.9.8**: MIT, with additional third-party components documented in its upstream source. See licenses/deno.txt.
+- **FFmpeg N-128142-g28fda48e0b**: BtbN's Windows x64 LGPL shared build, linked by ffmpeg.org. The archive's LGPLv3 license is included verbatim as licenses/ffmpeg-lgpl.txt and engines/ffmpeg-LICENSE.txt. The build excludes GPL and nonfree FFmpeg components; FFmpeg and ffprobe share replaceable DLLs.
+- **Tauri, Vite, TypeScript and Rust dependencies**: license metadata is available in their published packages and the committed dependency lockfiles.
 
-The bundled executables can be replaced by compatible versions in the installed engines directory. ytnabber does not modify them or restrict their replacement. Before public binary redistribution, preserve all upstream notices and supply the exact corresponding source and build materials required by their licenses.
+Exact corresponding upstream source and build-material locations are listed in licenses/SOURCES.md. All licenses in that directory accompany the installer. The separate engines and shared libraries can be replaced by compatible versions in the installed engines directory; ytnabber does not modify or restrict their replacement.
 
-The supplied emblem and application logo were provided by the project owner; no license to those assets is implied.
-
+The supplied emblem and application logo were provided by the project owner. No license to those assets is implied.

@@ -54,6 +54,3 @@ for (const engine of manifest) {
 }
 await writeFile(path.join(output, "versions.json"), JSON.stringify(manifest, null, 2));
 console.log("Engines ready.");
-
-
-
