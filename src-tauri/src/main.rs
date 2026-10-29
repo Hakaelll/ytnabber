@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod engine;
 mod model;
+#[cfg(test)]
+mod smoke;
 
 use model::{Format, Media, Selection};
 use serde::Serialize;
@@ -13,7 +15,7 @@ use std::{
         Mutex,
     },
 };
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::watch;
 
@@ -35,6 +37,13 @@ struct Startup {
 
 fn begin(state: &AppState, kind: &str, id: u64) -> Result<watch::Receiver<bool>, String> {
     let mut jobs = state.jobs.lock().unwrap();
+    if kind == "metadata" {
+        if id < state.latest_metadata.load(Ordering::SeqCst) {
+            return Err(engine::CANCELLED.into());
+        }
+        state.latest_metadata.store(id, Ordering::SeqCst);
+        *state.selection.lock().unwrap() = None;
+    }
     if kind == "download" && jobs.contains_key(kind) {
         return Err("A download is already running.".into());
     }
@@ -89,15 +98,7 @@ async fn inspect_media(
 ) -> Result<Media, String> {
     let url = model::validate_url(&url)?;
     let root = engine::engine_dir(&app)?;
-    if request_id
-        < state
-            .latest_metadata
-            .fetch_max(request_id, Ordering::SeqCst)
-    {
-        return Err(engine::CANCELLED.into());
-    }
     let cancel = begin(&state, "metadata", request_id)?;
-    *state.selection.lock().unwrap() = None;
     let mut args = engine::base_args(&root);
     args.extend([
         "--dump-single-json".into(),
@@ -105,9 +106,13 @@ async fn inspect_media(
         "--".into(),
         url.clone(),
     ]);
-    let result = engine::run(&app, &root, args, cancel, request_id, true)
-        .await
-        .and_then(|raw| model::parse_media(&raw, request_id));
+    let events = app.clone();
+    let result = engine::run(&root, args, cancel, request_id, true, move |progress| {
+        let _ = events.emit("download-progress", progress);
+    })
+    .await
+    .and_then(|raw| model::parse_media(&raw, request_id));
+    let jobs = state.jobs.lock().unwrap();
     if state.latest_metadata.load(Ordering::SeqCst) == request_id {
         if let Ok(media) = &result {
             *state.selection.lock().unwrap() = Some(Selection {
@@ -116,6 +121,7 @@ async fn inspect_media(
             });
         }
     }
+    drop(jobs);
     finish(&state, "metadata", request_id);
     result
 }
@@ -169,8 +175,11 @@ async fn choose_folder(
 }
 
 fn publish(staging: &Path, file: &str, destination: &Path) -> Result<PathBuf, String> {
-    let output = PathBuf::from(file);
-    if output.parent() != Some(staging) || !output.is_file() {
+    let staging =
+        fs::canonicalize(staging).map_err(|_| "The download staging folder is unavailable.")?;
+    let output = fs::canonicalize(file)
+        .map_err(|_| "The engine did not produce the expected output file.")?;
+    if output.parent() != Some(staging.as_path()) || !output.is_file() {
         return Err("The engine did not produce the expected output file.".into());
     }
     let filename = output.file_name().ok_or("Invalid output filename.")?;
@@ -242,34 +251,25 @@ async fn download(
         .unwrap_or_default()
         .as_nanos();
     let staging = folder.join(format!(".ytnabber-{}-{nonce}", std::process::id()));
+    let mut created_staging = false;
     let result = async {
         fs::create_dir(&staging).map_err(|e| {
             format!("Could not write to this folder (check permissions and free space): {e}")
         })?;
-        let mut args = engine::base_args(&root);
-        args.extend(model::format_args(format, height));
-        args.extend([
-            "--no-overwrites".into(),
-            "--no-continue".into(),
-            "--no-simulate".into(),
-            "--newline".into(),
-            "--progress".into(),
-            "--progress-delta".into(),
-            "0.3".into(),
-            "--progress-template".into(),
-            "download:__PROGRESS__%(progress)j".into(),
-            "--progress-template".into(),
-            "postprocess:__POST__%(progress)j".into(),
-            "--print".into(),
-            "after_move:__FILE__%(filepath)s".into(),
-            "--paths".into(),
-            staging.to_string_lossy().into_owned(),
-            "-o".into(),
-            "%(title).150B [%(id)s].%(ext)s".into(),
-            "--".into(),
-            selected.url,
-        ]);
-        let file = engine::run(&app, &root, args, cancel.clone(), request_id, false).await?;
+        created_staging = true;
+        let args = engine::download_args(&root, format, height, &staging, &selected.url);
+        let events = app.clone();
+        let file = engine::run(
+            &root,
+            args,
+            cancel.clone(),
+            request_id,
+            false,
+            move |progress| {
+                let _ = events.emit("download-progress", progress);
+            },
+        )
+        .await?;
         if *cancel.borrow() {
             return Err(engine::CANCELLED.into());
         }
@@ -279,7 +279,7 @@ async fn download(
     }
     .await;
     // Only this operation's newly-created staging directory is ever removed.
-    if staging.is_dir() {
+    if created_staging {
         let _ = fs::remove_dir_all(&staging);
     }
     finish(&state, "download", request_id);
@@ -360,6 +360,8 @@ mod tests {
         let second = begin(&state, "metadata", 2).unwrap();
         assert!(*first.borrow());
         finish(&state, "metadata", 1);
+        assert!(!*second.borrow());
+        assert!(begin(&state, "metadata", 1).is_err());
         assert!(!*second.borrow());
         assert!(state.jobs.lock().unwrap().contains_key("metadata"));
         begin(&state, "download", 3).unwrap();

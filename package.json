@@ -12,7 +12,8 @@
     "test": "node --test tests/*.test.mjs",
     "test:native": "cargo test --manifest-path src-tauri/Cargo.toml",
     "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build"
+    "desktop:build": "tauri build",
+    "test:engines": "cargo test --manifest-path src-tauri/Cargo.toml real_engines -- --ignored --nocapture"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.0"
@@ -23,4 +24,3 @@
     "vite": "^7.3.0"
   }
 }
-

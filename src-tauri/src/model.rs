@@ -91,8 +91,15 @@ pub fn parse_media(raw: &str, request_id: u64) -> Result<Media, String> {
         if f["has_drm"] == true {
             continue;
         }
-        let video = f["vcodec"].as_str().is_some_and(|v| v != "none");
-        let audio = f["acodec"].as_str().is_some_and(|v| v != "none");
+        let video = f["vcodec"].as_str().map_or_else(
+            || f["video_ext"].as_str().is_some_and(|ext| ext != "none"),
+            |codec| codec != "none",
+        );
+        // Direct media links can omit codecs; let the engine probe their audio.
+        let audio = f["acodec"].as_str().map_or_else(
+            || video || f["audio_ext"].as_str().is_some_and(|ext| ext != "none"),
+            |codec| codec != "none",
+        );
         has_video |= video;
         has_audio |= audio;
         if video {
@@ -208,6 +215,13 @@ mod tests {
         assert!(m.has_audio && m.has_video);
         assert!(parse_media(r#"{"entries":[]}"#, 1).is_err());
         assert!(parse_media(r#"{"is_live":true}"#, 1).is_err());
+    }
+    #[test]
+    fn direct_media_without_codec_metadata_remains_usable() {
+        let media = parse_media(r#"{"title":"Direct file","formats":[{"vcodec":null,"ext":"mp4","video_ext":"mp4","audio_ext":"none"}]}"#, 1).unwrap();
+        assert!(media.has_video && media.has_audio);
+        assert!(media.heights.is_empty());
+        assert_eq!(media.duration, None);
     }
     #[test]
     fn progress_handles_unknown_size_and_clamps() {

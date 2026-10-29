@@ -6,4 +6,4 @@ src-tauri/engines/*
 .cache/
 artifacts/
 *.log
-
+src-tauri/gen/

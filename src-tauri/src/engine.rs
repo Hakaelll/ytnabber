@@ -4,7 +4,7 @@ use std::{
     process::Stdio,
     time::Duration,
 };
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, BufReader},
     process::Command,
@@ -34,6 +34,8 @@ pub fn base_args(root: &Path) -> Vec<String> {
         "--no-playlist".into(),
         "--no-warnings".into(),
         "--no-color".into(),
+        "--encoding".into(),
+        "utf-8".into(),
         "--windows-filenames".into(),
         "--no-js-runtimes".into(),
         "--js-runtimes".into(),
@@ -89,27 +91,24 @@ impl Drop for ProcessTree {
     }
 }
 
-fn emit_processing(app: &AppHandle, request_id: u64) {
-    let _ = app.emit(
-        "download-progress",
-        Progress {
-            request_id,
-            phase: "processing".into(),
-            percent: None,
-            speed: None,
-            downloaded: None,
-            total: None,
-        },
-    );
+fn emit_processing(emit: &impl Fn(Progress), request_id: u64) {
+    emit(Progress {
+        request_id,
+        phase: "processing".into(),
+        percent: None,
+        speed: None,
+        downloaded: None,
+        total: None,
+    });
 }
 
 pub async fn run(
-    app: &AppHandle,
     root: &Path,
     args: Vec<String>,
     mut cancel: watch::Receiver<bool>,
     request_id: u64,
     metadata: bool,
+    emit: impl Fn(Progress) + Send + Sync + Clone + 'static,
 ) -> Result<String, String> {
     if *cancel.borrow() {
         return Err(CANCELLED.into());
@@ -136,16 +135,22 @@ pub async fn run(
         .stderr
         .take()
         .ok_or("Could not read process errors.")?;
-    let err_app = app.clone();
+    let err_emit = emit.clone();
     let mut err_task = tokio::spawn(async move {
         let mut lines = BufReader::new(stderr).lines();
         let mut tail = Vec::new();
         while let Ok(Some(line)) = lines.next_line().await {
-            if line.starts_with("[Merger]")
+            if let Some(progress) = parse_progress(&line, request_id) {
+                err_emit(progress);
+                continue;
+            }
+            if line.starts_with("__POST__")
+                || line.starts_with("[Merger]")
                 || line.starts_with("[ExtractAudio]")
                 || line.starts_with("[VideoRemuxer]")
             {
-                emit_processing(&err_app, request_id);
+                emit_processing(&err_emit, request_id);
+                continue;
             }
             tail.push(line);
             if tail.len() > 12 {
@@ -166,13 +171,13 @@ pub async fn run(
             let mut lines = BufReader::new(stdout).lines();
             while let Some(line) = lines.next_line().await.map_err(|e| e.to_string())? {
                 if let Some(progress) = parse_progress(&line, request_id) {
-                    let _ = app.emit("download-progress", progress);
+                    emit(progress);
                 } else if line.starts_with("__POST__")
                     || line.starts_with("[Merger]")
                     || line.starts_with("[ExtractAudio]")
                     || line.starts_with("[VideoRemuxer]")
                 {
-                    emit_processing(app, request_id);
+                    emit_processing(&emit, request_id);
                 } else if let Some(file) = line.strip_prefix("__FILE__") {
                     result = file.to_owned();
                 }
@@ -214,4 +219,37 @@ pub async fn run(
         });
     }
     Ok(result)
+}
+
+pub fn download_args(
+    root: &Path,
+    format: crate::model::Format,
+    height: Option<u32>,
+    staging: &Path,
+    url: &str,
+) -> Vec<String> {
+    let mut args = base_args(root);
+    args.extend(crate::model::format_args(format, height));
+    args.extend([
+        "--no-overwrites".into(),
+        "--no-continue".into(),
+        "--no-simulate".into(),
+        "--newline".into(),
+        "--progress".into(),
+        "--progress-delta".into(),
+        "0.3".into(),
+        "--progress-template".into(),
+        "download:__PROGRESS__%(progress)j".into(),
+        "--progress-template".into(),
+        "postprocess:__POST__%(progress)j".into(),
+        "--print".into(),
+        "after_move:__FILE__%(filepath)s".into(),
+        "--paths".into(),
+        staging.to_string_lossy().into_owned(),
+        "-o".into(),
+        "%(title).150B [%(id)s].%(ext)s".into(),
+        "--".into(),
+        url.to_owned(),
+    ]);
+    args
 }
