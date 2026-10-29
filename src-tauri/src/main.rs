@@ -5,6 +5,7 @@ mod media;
 mod model;
 #[cfg(test)]
 mod smoke;
+mod updater;
 
 use failure::Failure;
 use model::{Format, Media, Selection};
@@ -40,7 +41,12 @@ struct Startup {
 }
 
 fn begin(state: &AppState, kind: &str, id: u64) -> Result<watch::Receiver<bool>, String> {
-    if let Some(until) = *state.retry_at.lock().unwrap() {
+    if let Some(until) = state
+        .retry_at
+        .lock()
+        .unwrap()
+        .filter(|_| kind != "engine-update")
+    {
         let seconds = until
             .saturating_duration_since(std::time::Instant::now())
             .as_secs();
@@ -49,6 +55,9 @@ fn begin(state: &AppState, kind: &str, id: u64) -> Result<watch::Receiver<bool>,
         }
     }
     let mut jobs = state.jobs.lock().unwrap();
+    if jobs.contains_key("engine-update") || (kind == "engine-update" && !jobs.is_empty()) {
+        return Err("Wait for the current operation to finish before updating the engine.".into());
+    }
     if kind == "metadata" {
         if id < state.latest_metadata.load(Ordering::SeqCst) {
             return Err(engine::CANCELLED.into());
@@ -81,7 +90,7 @@ fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 #[tauri::command]
-fn startup(app: AppHandle, state: State<AppState>) -> Result<Startup, String> {
+async fn startup(app: AppHandle, state: State<'_, AppState>) -> Result<Startup, String> {
     let default = app
         .path()
         .download_dir()
@@ -93,7 +102,13 @@ fn startup(app: AppHandle, state: State<AppState>) -> Result<Startup, String> {
         .filter(|p| p.is_absolute() && p.is_dir());
     let folder = saved.unwrap_or(default);
     *state.folder.lock().unwrap() = folder.clone();
-    let error = engine::engine_dir(&app).err();
+    let error = match engine::engine_dir(&app) {
+        Err(error) => Some(error),
+        Ok(root) => {
+            let (_sender, cancel) = watch::channel(false);
+            engine::tool(&root, "deno.exe", vec!["eval".into(), "--no-config".into(), "const [a,b]=Deno.version.deno.split('.').map(Number); if(a<2||(a===2&&b<3))throw Error('Deno 2.3+ is required'); if(JSON.stringify([1,2].map(x=>x+1))!=='[2,3]')throw Error('JavaScript runtime failed');".into()], cancel).await.err()
+        }
+    };
     Ok(Startup {
         folder: folder.to_string_lossy().into_owned(),
         engines_ready: error.is_none(),
@@ -119,9 +134,17 @@ async fn inspect_media(
         url.clone(),
     ]);
     let events = app.clone();
-    let result = engine::run(&root, args, cancel, request_id, true, move |progress| {
-        let _ = events.emit("download-progress", progress);
-    })
+    let executable = updater::executable(&app, &root)?;
+    let result = engine::run_process(
+        executable,
+        args,
+        cancel,
+        request_id,
+        true,
+        move |progress| {
+            let _ = events.emit("download-progress", progress);
+        },
+    )
     .await
     .and_then(|raw| model::parse_media(&raw, request_id));
     let jobs = state.jobs.lock().unwrap();
@@ -294,8 +317,8 @@ async fn download(
             }
         }
         let events = app.clone();
-        let file = engine::run(
-            &root,
+        let file = engine::run_process(
+            updater::executable(&app, &root)?,
             args,
             cancel.clone(),
             request_id,
@@ -347,6 +370,20 @@ async fn download(
 }
 
 #[tauri::command]
+async fn engine_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    mode: String,
+) -> Result<updater::Status, Failure> {
+    let root = engine::engine_dir(&app)?;
+    let data = updater::data_dir(&app)?;
+    let _cancel = begin(&state, "engine-update", 0)?;
+    let result = updater::update(&data, &root, &mode).await;
+    finish(&state, "engine-update", 0);
+    result.map_err(|raw| Failure::classify(&raw, "engine-update"))
+}
+
+#[tauri::command]
 fn open_folder(state: State<AppState>) -> Result<(), String> {
     let folder = state
         .last_file
@@ -380,7 +417,8 @@ fn main() {
             cancel_job,
             choose_folder,
             download,
-            open_folder
+            open_folder,
+            engine_update
         ])
         .build(tauri::generate_context!())
         .expect("Could not start ytnabber")

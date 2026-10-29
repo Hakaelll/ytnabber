@@ -11,6 +11,7 @@ interface Media {
 }
 interface Startup { folder: string; enginesReady: boolean; engineError: string | null }
 interface Progress { requestId: number; phase: string; percent: number | null; speed: number | null; downloaded: number | null; total: number | null }
+interface EngineStatus { current: string; latest: string; available: boolean; canRollback: boolean }
 
 const linkIcon = '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m8 12 4-4M7 13l-1 1a3.5 3.5 0 0 1-5-5l4-4a3.5 3.5 0 0 1 5 0m0 2 1-1a3.5 3.5 0 0 1 5 5l-4 4a3.5 3.5 0 0 1-5 0" transform="translate(1 0)" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 const folderIcon = '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M2.5 6.5V4.7c0-.7.5-1.2 1.2-1.2H8l1.7 2h6.6c.7 0 1.2.5 1.2 1.2v8.6c0 .7-.5 1.2-1.2 1.2H3.7c-.7 0-1.2-.5-1.2-1.2V6.5Z" stroke="currentColor" stroke-width="1.2"/></svg>';
@@ -20,6 +21,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <header class="titlebar">
     <div class="brand"><img src="/logo.png" alt="" width="19" height="19"><span>ytnabber</span></div>
     <div class="window-actions">
+      <button id="engine-check" aria-label="Check download engine updates" title="Check download engine updates"><svg viewBox="0 0 16 16"><path d="M12 5a5 5 0 1 0 1 5M12 2v4H8"/></svg></button>
       <button id="minimize" aria-label="Minimize" title="Minimize"><svg viewBox="0 0 16 16"><path d="M3 8.5h10"/></svg></button>
       <button id="maximize" aria-label="Maximize or restore" title="Maximize or restore"><svg viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx=".5"/></svg></button>
       <button id="close" aria-label="Close" title="Close"><svg viewBox="0 0 16 16"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
@@ -45,7 +47,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <div id="progress-area" class="progress-area" hidden><div class="progress-copy"><span id="phase">Downloading</span><span id="transfer"></span></div><div id="progress" class="progress" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><div id="progress-fill"></div></div></div>
         <p id="audio-hint" class="audio-hint" hidden>Converted from the source. Quality cannot exceed the original.</p>
       </section>
-      <div id="message" class="message" role="status" aria-live="polite" hidden><span id="message-text"></span><button id="open-folder" hidden>Open folder</button><button id="retry" hidden>Try again</button><button id="copy-error" hidden title="Copy technical details">Copy details</button></div>
+      <div id="message" class="message" role="status" aria-live="polite" hidden><span id="message-text"></span><button id="open-folder" hidden>Open folder</button><button id="retry" hidden>Try again</button><button id="copy-error" hidden title="Copy technical details">Copy details</button><button id="engine-install" hidden>Update engine</button><button id="engine-rollback" hidden>Restore previous</button></div>
     </section>
   </main>
 
@@ -91,6 +93,9 @@ function message(text: string, kind = "info", retry = false) {
   element("open-folder").hidden = kind !== "success";
   element("retry").hidden = !retry;
   element("copy-error").hidden = true;
+  element("copy-error").textContent = "Copy details";
+  element("engine-install").hidden = true;
+  element("engine-rollback").hidden = true;
   element("message-text").title = "";
   if (text) requestAnimationFrame(() => element("message").scrollIntoView({
     block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
@@ -138,6 +143,7 @@ function setBusy(value: boolean) {
   input.disabled = value;
   load.disabled = value || !ready || loading;
   destination.disabled = value;
+  element<HTMLButtonElement>("engine-check").disabled = value;
   downloadButton.disabled = value || !media || !ready;
   downloadButton.hidden = value;
   cancelButton.hidden = !value;
@@ -146,6 +152,23 @@ function setBusy(value: boolean) {
   quality.disabled = value || !["mp4", "mp3"].includes(format);
   if (!value) { cancelButton.disabled = false; cancelButton.textContent = "Cancel"; }
 }
+async function updateEngine(mode: "check" | "install" | "rollback") {
+  if (busy || loading) return;
+  setBusy(true);
+  cancelButton.hidden = true;
+  element("progress-area").hidden = true;
+  message(mode === "check" ? "Checking engine version…" : mode === "install" ? "Updating download engine…" : "Restoring previous engine…");
+  try {
+    const status = await invoke<EngineStatus>("engine_update", { mode });
+    message(`Download engine ${status.current}.${status.available ? ` Version ${status.latest} is available.` : ""}`);
+    element("engine-install").hidden = !status.available;
+    element("engine-rollback").hidden = !status.canRollback;
+  } catch (error) { showError(error); }
+  finally { setBusy(false); }
+}
+element("engine-check").addEventListener("click", () => void updateEngine("check"));
+element("engine-install").addEventListener("click", () => void updateEngine("install"));
+element("engine-rollback").addEventListener("click", () => void updateEngine("rollback"));
 async function inspect(force = false) {
   clearTimeout(debounce);
   if (!ready || busy) return;

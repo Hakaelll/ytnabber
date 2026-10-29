@@ -147,6 +147,34 @@ A local HTTP fixture returning 429 to the bundled yt-dlp observed exactly
 one request. A state test confirmed cooldown blocks both metadata and
 download starts. No source-site throttling was deliberately induced.
 
+### Independent engine updates
+
+The titlebar's engine action checks the official stable GitHub release on
+request. Updating and restoring the previous engine are explicit inline
+actions. No automatic executable download runs at startup. Startup checks
+that bundled Deno can actually start and evaluate JavaScript at version 2.3+.
+
+Downloads remain HTTPS-only with certificate verification through Windows
+Schannel. Redirects are restricted to GitHub's known release hosts, responses
+have size/time limits, and the exact release's official SHA2-256SUMS is checked
+before the candidate is executed. A successful version check precedes an
+atomic active-version switch. Updates use versioned per-user data directories;
+the bundled engine is never overwritten. The previous functional version is
+retained and can be restored without network access. Cross-process file
+locking prevents competing updater writes, and active app operations exclude
+updates. Old version directories that are in use are left for later cleanup.
+
+Uses reqwest (already present in the lockfile) with only native TLS enabled,
+and SHA-256; no second TLS runtime, cookie store or browser credentials. Its
+actual binary-size cost must be measured in the release build.
+
+Fresh checks: 13 native unit tests passed, including checksum rejection,
+path/version validation, atomic switching and fallback. A real isolated
+test downloaded an officially verified older engine, checked/installed
+2026.10.26, restored 2026.10.21 and confirmed the bundled fixture remained
+byte-identical. Clippy passed with warnings denied. This does not constitute
+a Windows installer upgrade test.
+
 Baseline figures above were measured in this run. Historical 0.1.0 checks are
 recorded separately in VERIFICATION.md and are not fresh 0.1.1 results.
 Clean Windows 10/11 installation, upgrade/uninstall and real player checks

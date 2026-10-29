@@ -110,6 +110,7 @@ fn emit_processing(emit: &impl Fn(Progress), request_id: u64) {
     });
 }
 
+#[cfg(test)]
 pub async fn run(
     root: &Path,
     args: Vec<String>,
@@ -146,7 +147,7 @@ pub async fn tool(
     .await
 }
 
-async fn run_process(
+pub async fn run_process(
     executable: PathBuf,
     args: Vec<String>,
     mut cancel: watch::Receiver<bool>,
