@@ -31,7 +31,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <form id="source-form" class="source-form" autocomplete="off">
         <label class="sr-only" for="url">Video URL</label>
         <div class="url-control">${linkIcon}<input id="url" type="url" placeholder="Paste a video link" spellcheck="false" autocomplete="off" required aria-describedby="source-hint"><button id="load" type="submit" aria-label="Load video" title="Load video"><svg viewBox="0 0 20 20" fill="none"><path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
-        <div id="source-hint" class="source-hint"><span id="hint-text">Video or audio. One link at a time.</span><span id="loading" hidden><span class="spinner"></span>Getting video info</span></div>
+        <div id="source-hint" class="source-hint"><span id="loading" hidden><span class="spinner"></span>Getting video info</span></div>
       </form>
       <section id="details" class="details" aria-label="Selected video" inert>
         <div class="preview"><img id="thumbnail" alt="" referrerpolicy="no-referrer"><div class="preview-fallback" id="preview-fallback">Preview unavailable</div><span id="duration" class="duration"></span></div>
@@ -48,7 +48,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <div id="message" class="message" role="status" aria-live="polite" hidden><span id="message-text"></span><button id="open-folder" hidden>Open folder</button><button id="retry" hidden>Try again</button></div>
     </section>
   </main>
-  <footer><span id="footer-label">Made for the things you want to keep.</span><span class="version">v0.1.0</span></footer>
+
 `;
 function element<T extends HTMLElement = HTMLElement>(id: string): T { return document.getElementById(id) as T; }
 const main = element("main");
@@ -85,7 +85,6 @@ function message(text: string, kind = "info", retry = false) {
 function setLoading(value: boolean) {
   loading = value;
   element("loading").hidden = !value;
-  element("hint-text").hidden = value;
   load.classList.toggle("is-loading", value);
   load.setAttribute("aria-busy", String(value));
   load.disabled = !ready || value || busy;
@@ -239,8 +238,8 @@ if (isTauri()) {
 } else {
   for (const button of document.querySelectorAll<HTMLButtonElement>(".window-actions button")) button.disabled = true;
   message("Open the ytnabber desktop app to download.");
-  element("footer-label").textContent = "Desktop preview";
 }
 setLoading(false);
 input.focus();
+
 
