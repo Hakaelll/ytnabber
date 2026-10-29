@@ -19,6 +19,7 @@ Verified on 29 October 2026 in the project's Windows x64 development environment
 | Missing source | A public HTTP 404 source returned a recoverable failure. |
 | Existing file protection | Native tests confirmed the existing file remained unchanged. |
 | Windows filename regression | The actual failure was reproduced with a fullwidth separator. Forcing UTF-8 fixed it; the test also passes with an accented destination and title. |
+| Reported YouTube video | The exact 25-second clip from the screenshot downloaded at 1080p with both streams, retained its Unicode filename, and passed full-file decoding. |
 | Metadata replacement | Tests confirm a stale operation cannot cancel or remove a newer one. |
 | Interface states | A headless Edge check using Tauri's official IPC mocks covered loading, metadata, available qualities, audio/video switching, folder changes, progress, processing, cancellation, success and error recovery. |
 | Selector | The quality picker was opened and its first option was verified to appear below the trigger. It scrolls within the space remaining below the control. |
@@ -29,13 +30,17 @@ Verified on 29 October 2026 in the project's Windows x64 development environment
 
 The local engine checks use https://www.w3schools.com/html/mov_bbb.mp4. The public YouTube check uses https://www.youtube.com/watch?v=jNQXAC9IVRw.
 
-## YouTube result and current limitation
+## YouTube verification and intermittent source checks
 
 Earlier in this session, the real YouTube integration check successfully read the title, duration, thumbnail and formats, downloaded a 144p video track plus a separate audio track, merged them, and verified both streams with ffprobe.
 
 Later, YouTube started returning **“Sign in to confirm you're not a bot”** for that video and another public video. The same result occurs when invoking the bundled executable directly, outside the app. A SHA-256-verified official yt-dlp nightly was checked separately and returned the same response. The shipped engine remains the pinned stable release.
 
-The latest validation therefore reran the two available direct-media/Unicode integration tests successfully and deliberately did not keep retrying YouTube. A current all-green YouTube result cannot be claimed for this connection. The interface distinguishes this source-level block from a private or unavailable video and suppresses duplicate in-flight lookups. The app does not import browser cookies, log in, or attempt access-restriction workarounds.
+A later recheck of the exact native YouTube integration test passed again: separate 144p video and audio tracks were downloaded, merged and verified with ffprobe.
+
+The specific video from the reported failure was then verified as well: "VERBAL ALTERCATION | Alexander Volkanovski and Max Holloway Backstage at UFC 276" (K3GT-IO4eNM). The current engine arguments produced an 8,026,552-byte MP4 with 1080p VP9 video and Opus audio. The returned Windows filename retained its fullwidth separator and matched the real file. FFmpeg successfully decoded the complete file. Generated verification media was removed afterward.
+
+This demonstrates that the source block was intermittent, while the Unicode-path correction is independently covered by a deterministic direct-media regression. The interface distinguishes source verification blocks from private or unavailable videos and suppresses duplicate in-flight lookups. The app does not import browser cookies, log in, or attempt access-restriction workarounds. Source sites can still request verification again; permanent availability cannot be guaranteed.
 
 ## Measurements
 
