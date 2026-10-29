@@ -1,0 +1,368 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod engine;
+mod model;
+
+use model::{Format, Media, Selection};
+use serde::Serialize;
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex,
+    },
+};
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_dialog::DialogExt;
+use tokio::sync::watch;
+
+#[derive(Default)]
+struct AppState {
+    jobs: Mutex<HashMap<String, (u64, watch::Sender<bool>)>>,
+    selection: Mutex<Option<Selection>>,
+    folder: Mutex<PathBuf>,
+    last_file: Mutex<Option<PathBuf>>,
+    latest_metadata: AtomicU64,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Startup {
+    folder: String,
+    engines_ready: bool,
+    engine_error: Option<String>,
+}
+
+fn begin(state: &AppState, kind: &str, id: u64) -> Result<watch::Receiver<bool>, String> {
+    let mut jobs = state.jobs.lock().unwrap();
+    if kind == "download" && jobs.contains_key(kind) {
+        return Err("A download is already running.".into());
+    }
+    if let Some((_, old)) = jobs.remove(kind) {
+        let _ = old.send(true);
+    }
+    let (sender, receiver) = watch::channel(false);
+    jobs.insert(kind.into(), (id, sender));
+    Ok(receiver)
+}
+fn finish(state: &AppState, kind: &str, id: u64) {
+    let mut jobs = state.jobs.lock().unwrap();
+    if jobs.get(kind).is_some_and(|(job_id, _)| *job_id == id) {
+        jobs.remove(kind);
+    }
+}
+fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app
+        .path()
+        .app_config_dir()
+        .map_err(|e| e.to_string())?
+        .join("destination.json"))
+}
+
+#[tauri::command]
+fn startup(app: AppHandle, state: State<AppState>) -> Result<Startup, String> {
+    let default = app
+        .path()
+        .download_dir()
+        .map_err(|_| "Windows Downloads folder could not be found.")?;
+    let saved = settings_path(&app)
+        .ok()
+        .and_then(|p| fs::read(p).ok())
+        .and_then(|v| serde_json::from_slice::<PathBuf>(&v).ok())
+        .filter(|p| p.is_absolute() && p.is_dir());
+    let folder = saved.unwrap_or(default);
+    *state.folder.lock().unwrap() = folder.clone();
+    let error = engine::engine_dir(&app).err();
+    Ok(Startup {
+        folder: folder.to_string_lossy().into_owned(),
+        engines_ready: error.is_none(),
+        engine_error: error,
+    })
+}
+
+#[tauri::command]
+async fn inspect_media(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    url: String,
+    request_id: u64,
+) -> Result<Media, String> {
+    let url = model::validate_url(&url)?;
+    let root = engine::engine_dir(&app)?;
+    if request_id
+        < state
+            .latest_metadata
+            .fetch_max(request_id, Ordering::SeqCst)
+    {
+        return Err(engine::CANCELLED.into());
+    }
+    let cancel = begin(&state, "metadata", request_id)?;
+    *state.selection.lock().unwrap() = None;
+    let mut args = engine::base_args(&root);
+    args.extend([
+        "--dump-single-json".into(),
+        "--skip-download".into(),
+        "--".into(),
+        url.clone(),
+    ]);
+    let result = engine::run(&app, &root, args, cancel, request_id, true)
+        .await
+        .and_then(|raw| model::parse_media(&raw, request_id));
+    if state.latest_metadata.load(Ordering::SeqCst) == request_id {
+        if let Ok(media) = &result {
+            *state.selection.lock().unwrap() = Some(Selection {
+                url,
+                media: media.clone(),
+            });
+        }
+    }
+    finish(&state, "metadata", request_id);
+    result
+}
+
+#[tauri::command]
+fn cancel_job(state: State<AppState>, kind: String, request_id: u64) -> Result<(), String> {
+    if !matches!(kind.as_str(), "metadata" | "download") {
+        return Err("Unknown operation.".into());
+    }
+    if let Some((id, cancel)) = state.jobs.lock().unwrap().get(&kind) {
+        if *id == request_id {
+            let _ = cancel.send(true);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn choose_folder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    let dialog_app = app.clone();
+    let current = state.folder.lock().unwrap().clone();
+    let chosen = tauri::async_runtime::spawn_blocking(move || {
+        dialog_app
+            .dialog()
+            .file()
+            .set_directory(current)
+            .blocking_pick_folder()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let Some(chosen) = chosen else {
+        return Ok(None);
+    };
+    let folder = chosen.into_path().map_err(|_| "Choose a local folder.")?;
+    if !folder.is_absolute() || !folder.is_dir() {
+        return Err("Choose an existing folder.".into());
+    }
+    let config = settings_path(&app)?;
+    fs::create_dir_all(config.parent().ok_or("Invalid settings directory.")?)
+        .map_err(|e| e.to_string())?;
+    fs::write(
+        config,
+        serde_json::to_vec(&folder).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| format!("Could not save the destination: {e}"))?;
+    *state.folder.lock().unwrap() = folder.clone();
+    Ok(Some(folder.to_string_lossy().into_owned()))
+}
+
+fn publish(staging: &Path, file: &str, destination: &Path) -> Result<PathBuf, String> {
+    let output = PathBuf::from(file);
+    if output.parent() != Some(staging) || !output.is_file() {
+        return Err("The engine did not produce the expected output file.".into());
+    }
+    let filename = output.file_name().ok_or("Invalid output filename.")?;
+    let target = destination.join(filename);
+    // MoveFileExW without REPLACE_EXISTING also supports FAT/exFAT destinations.
+    #[cfg(windows)]
+    let published = {
+        use std::os::windows::ffi::OsStrExt;
+        let from: Vec<u16> = output.as_os_str().encode_wide().chain(Some(0)).collect();
+        let to: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
+        let ok = unsafe {
+            windows_sys::Win32::Storage::FileSystem::MoveFileExW(from.as_ptr(), to.as_ptr(), 0)
+        };
+        if ok != 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    };
+    #[cfg(not(windows))]
+    let published = fs::hard_link(&output, &target);
+    published.map_err(|e| {
+        if e.kind() == std::io::ErrorKind::AlreadyExists {
+            "This file already exists. Choose another folder or rename the existing file.".into()
+        } else {
+            format!(
+                "Could not save the finished file (check free space and folder permissions): {e}"
+            )
+        }
+    })?;
+    Ok(target)
+}
+
+#[tauri::command]
+async fn download(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request_id: u64,
+    media_id: u64,
+    format: Format,
+    height: Option<u32>,
+) -> Result<String, String> {
+    let selected = state
+        .selection
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or("Paste a video URL first.")?;
+    if selected.media.request_id != media_id {
+        return Err("The selected video has changed. Try again.".into());
+    }
+    if format == Format::Mp4 && !selected.media.has_video {
+        return Err("This source has no video track.".into());
+    }
+    if format != Format::Mp4 && !selected.media.has_audio {
+        return Err("This source has no audio track.".into());
+    }
+    if height.is_some_and(|h| format != Format::Mp4 || !selected.media.heights.contains(&h)) {
+        return Err("This quality is not available for the selected format.".into());
+    }
+    let root = engine::engine_dir(&app)?;
+    let folder = state.folder.lock().unwrap().clone();
+    if !folder.is_dir() {
+        return Err("The destination folder is unavailable. Choose another folder.".into());
+    }
+    let cancel = begin(&state, "download", request_id)?;
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let staging = folder.join(format!(".ytnabber-{}-{nonce}", std::process::id()));
+    let result = async {
+        fs::create_dir(&staging).map_err(|e| {
+            format!("Could not write to this folder (check permissions and free space): {e}")
+        })?;
+        let mut args = engine::base_args(&root);
+        args.extend(model::format_args(format, height));
+        args.extend([
+            "--no-overwrites".into(),
+            "--no-continue".into(),
+            "--no-simulate".into(),
+            "--newline".into(),
+            "--progress".into(),
+            "--progress-delta".into(),
+            "0.3".into(),
+            "--progress-template".into(),
+            "download:__PROGRESS__%(progress)j".into(),
+            "--progress-template".into(),
+            "postprocess:__POST__%(progress)j".into(),
+            "--print".into(),
+            "after_move:__FILE__%(filepath)s".into(),
+            "--paths".into(),
+            staging.to_string_lossy().into_owned(),
+            "-o".into(),
+            "%(title).150B [%(id)s].%(ext)s".into(),
+            "--".into(),
+            selected.url,
+        ]);
+        let file = engine::run(&app, &root, args, cancel.clone(), request_id, false).await?;
+        if *cancel.borrow() {
+            return Err(engine::CANCELLED.into());
+        }
+        let target = publish(&staging, file.trim(), &folder)?;
+        *state.last_file.lock().unwrap() = Some(target.clone());
+        Ok::<_, String>(target.to_string_lossy().into_owned())
+    }
+    .await;
+    // Only this operation's newly-created staging directory is ever removed.
+    if staging.is_dir() {
+        let _ = fs::remove_dir_all(&staging);
+    }
+    finish(&state, "download", request_id);
+    result
+}
+
+#[tauri::command]
+fn open_folder(state: State<AppState>) -> Result<(), String> {
+    let folder = state
+        .last_file
+        .lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|p| p.parent())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| state.folder.lock().unwrap().clone());
+    if !folder.is_dir() {
+        return Err("The destination folder no longer exists.".into());
+    }
+    let mut command = std::process::Command::new("explorer.exe");
+    command.arg(folder);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    command.spawn().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn main() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .manage(AppState::default())
+        .invoke_handler(tauri::generate_handler![
+            startup,
+            inspect_media,
+            cancel_job,
+            choose_folder,
+            download,
+            open_folder
+        ])
+        .build(tauri::generate_context!())
+        .expect("Could not start ytnabber")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                let state = app.state::<AppState>();
+                for (_, sender) in state.jobs.lock().unwrap().values() {
+                    let _ = sender.send(true);
+                }
+            }
+        });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn completion_preserves_existing_files_and_checks_output_path() {
+        let root = std::env::temp_dir().join(format!("ytnabber-test-{}", std::process::id()));
+        fs::create_dir_all(root.join("staging")).unwrap();
+        let stage = root.join("staging");
+        let file = stage.join("test.mp4");
+        fs::write(&file, b"new").unwrap();
+        fs::write(root.join("test.mp4"), b"existing").unwrap();
+        assert!(publish(&stage, &file.to_string_lossy(), &root).is_err());
+        assert_eq!(fs::read(root.join("test.mp4")).unwrap(), b"existing");
+        assert!(publish(&stage, &root.join("outside.mp4").to_string_lossy(), &root).is_err());
+        fs::remove_file(root.join("test.mp4")).unwrap();
+        assert!(publish(&stage, &file.to_string_lossy(), &root).is_ok());
+        assert_eq!(fs::read(root.join("test.mp4")).unwrap(), b"new");
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn stale_cancellation_cannot_cancel_a_new_request() {
+        let state = AppState::default();
+        let first = begin(&state, "metadata", 1).unwrap();
+        let second = begin(&state, "metadata", 2).unwrap();
+        assert!(*first.borrow());
+        finish(&state, "metadata", 1);
+        assert!(!*second.borrow());
+        assert!(state.jobs.lock().unwrap().contains_key("metadata"));
+        begin(&state, "download", 3).unwrap();
+        assert!(begin(&state, "download", 4).is_err());
+    }
+}

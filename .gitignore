@@ -1,0 +1,9 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/engines/*
+!src-tauri/engines/.gitkeep
+.cache/
+artifacts/
+*.log
+
