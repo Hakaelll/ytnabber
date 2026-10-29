@@ -35,6 +35,90 @@ fn probe(root: &Path, file: &Path) -> serde_json::Value {
     );
     serde_json::from_slice(&output.stdout).unwrap()
 }
+
+#[tokio::test]
+#[ignore = "Requires bundled Windows engines; no Internet needed"]
+async fn real_engines_offline_codec_conversion() {
+    let root = engines();
+    let folder = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../.cache")
+        .join(format!("codec test á-{}", std::process::id()));
+    fs::create_dir_all(&folder).unwrap();
+    let source = folder.join("Vídeo ｜ source.webm");
+    let (_sender, cancel) = watch::channel(false);
+    let mut args: Vec<String> = [
+        "-v",
+        "error",
+        "-nostdin",
+        "-n",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=320x180:rate=24",
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=440:sample_rate=48000",
+        "-t",
+        "2",
+        "-c:v",
+        "libvpx-vp9",
+        "-c:a",
+        "libopus",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    args.push(source.to_string_lossy().into_owned());
+    engine::tool(&root, "ffmpeg.exe", args, cancel.clone())
+        .await
+        .unwrap();
+    let url = url::Url::from_file_path(fs::canonicalize(&source).unwrap()).unwrap();
+    for (format, extension) in [
+        (Format::Mp4, "mp4"),
+        (Format::Source, "source"),
+        (Format::Mp3, "mp3"),
+        (Format::M4a, "m4a"),
+        (Format::Opus, "opus"),
+    ] {
+        let staging = folder.join(extension);
+        fs::create_dir(&staging).unwrap();
+        let mut args = engine::download_args(&root, format, None, &staging, url.as_str());
+        args.insert(0, "--enable-file-urls".into());
+        let file = engine::run(&root, args, cancel.clone(), 90, false, |_| {})
+            .await
+            .unwrap();
+        let file = crate::media::prepare(&root, Path::new(&file), format, cancel.clone())
+            .await
+            .unwrap();
+        let info = probe(&root, &file);
+        crate::media::validate(&info, format).unwrap();
+        if format == Format::Source {
+            assert!(info["streams"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|s| s["codec_name"] == "vp9"));
+        }
+        let args = vec![
+            "-v".into(),
+            "error".into(),
+            "-i".into(),
+            file.to_string_lossy().into_owned(),
+            "-f".into(),
+            "null".into(),
+            "-".into(),
+        ];
+        engine::tool(&root, "ffmpeg.exe", args, cancel.clone())
+            .await
+            .unwrap();
+        println!(
+            "Verified {format:?}: {} bytes, validated and fully decoded",
+            file.metadata().unwrap().len()
+        );
+    }
+    fs::remove_dir_all(folder).unwrap();
+}
 #[tokio::test]
 #[ignore = "Requires prepared Windows engines and Internet access; run npm run test:engines"]
 async fn real_engines_download_convert_report_progress_and_cancel() {

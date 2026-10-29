@@ -102,6 +102,28 @@ upstream, so successful `--version` output alone cannot justify replacement.
 
 ## Verification status
 
+### Codec correction block
+
+MP4 now prefers H.264/AAC at the requested resolution. After download the
+app probes actual streams, duration, size and container; incompatible MP4
+tracks are converted separately (copy compatible video/audio). The existing
+Quality control also offers original video codecs explicitly, preserving
+the source's highest-quality option. MP3 defaults to 192 kbps, with
+128/256/320 available in that control; M4A prefers AAC, and explicit Opus
+was added to the existing format buttons. No artwork/CSS/animation changes.
+
+Publication is gated on FFprobe validation. Conversion/verification errors
+retain the staging inputs; error details identify their directory. Explicit
+cancellation cleans that operation's staging. Existing files remain protected.
+
+Fresh checks: 9 native unit tests, 4 frontend tests, TypeScript, production
+frontend build and clippy with denied warnings passed. The codec selection
+regression was observed failing before the fix. An offline real-engine test
+generated VP9/Opus with FFmpeg in a Unicode path with spaces, ran the app's
+yt-dlp selectors and processing path for compatible MP4, original MP4, MP3,
+M4A and Opus, validated every output with FFprobe and fully decoded each.
+All five passed. This is not a clean-machine or Windows-player check.
+
 Baseline figures above were measured in this run. Historical 0.1.0 checks are
 recorded separately in VERIFICATION.md and are not fresh 0.1.1 results.
 Clean Windows 10/11 installation, upgrade/uninstall and real player checks

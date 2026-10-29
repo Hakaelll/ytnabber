@@ -37,7 +37,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <div class="preview"><img id="thumbnail" alt="" referrerpolicy="no-referrer"><div class="preview-fallback" id="preview-fallback">Preview unavailable</div><span id="duration" class="duration"></span></div>
         <div class="video-heading"><h1 id="video-title"></h1><p id="uploader"></p></div>
         <div class="options">
-          <fieldset class="format-field"><legend>Format</legend><div class="format-options"><button type="button" data-format="mp4" aria-pressed="true">MP4</button><button type="button" data-format="mp3" aria-pressed="false">MP3</button><button type="button" data-format="m4a" aria-pressed="false">M4A</button></div></fieldset>
+          <fieldset class="format-field"><legend>Format</legend><div class="format-options"><button type="button" data-format="mp4" aria-pressed="true">MP4</button><button type="button" data-format="mp3" aria-pressed="false">MP3</button><button type="button" data-format="m4a" aria-pressed="false">M4A</button><button type="button" data-format="opus" aria-pressed="false">Opus</button></div></fieldset>
           <div class="quality-field"><label for="quality">Quality</label><select id="quality"><option value="">Best available</option></select></div>
         </div>
         <button id="destination" class="destination" title="Choose download folder">${folderIcon}<span><span class="destination-label">Save to</span><span id="folder"></span></span><span class="change-folder">Change</span></button>
@@ -113,9 +113,11 @@ function options() {
     button.setAttribute("aria-pressed", String(button.dataset.format === format));
     button.disabled = busy || (button.dataset.format === "mp4" ? !media?.hasVideo : !media?.hasAudio);
   }
-  quality.replaceChildren(new Option(format === "mp4" ? "Best available" : format === "mp3" ? "Best source · MP3 V0" : "Best source · AAC", ""));
+  quality.replaceChildren(new Option(format === "mp4" ? "Best · H.264 / AAC" : format === "mp3" ? "192 kbps" : format === "opus" ? "Best source · Opus" : "Best source · AAC", ""));
   if (format === "mp4") for (const height of media?.heights ?? []) quality.add(new Option(height + "p", String(height)));
-  quality.disabled = busy || format !== "mp4";
+  if (format === "mp4") quality.add(new Option("Best · original codecs", "source"));
+  if (format === "mp3") for (const bitrate of [128, 256, 320]) quality.add(new Option(bitrate + " kbps", String(bitrate)));
+  quality.disabled = busy || !["mp4", "mp3"].includes(format);
   element("audio-hint").hidden = format === "mp4";
 }
 function setBusy(value: boolean) {
@@ -128,7 +130,7 @@ function setBusy(value: boolean) {
   cancelButton.hidden = !value;
   element("progress-area").hidden = !value;
   for (const button of formatButtons) button.disabled = value || (button.dataset.format === "mp4" ? !media?.hasVideo : !media?.hasAudio);
-  quality.disabled = value || format !== "mp4";
+  quality.disabled = value || !["mp4", "mp3"].includes(format);
   if (!value) { cancelButton.disabled = false; cancelButton.textContent = "Cancel"; }
 }
 async function inspect(force = false) {
@@ -192,7 +194,7 @@ downloadButton.addEventListener("click", async () => {
   const id = ++generation;
   activeDownload = id;
   stopped = false;
-  const selectedHeight = quality.value ? Number(quality.value) : null;
+  const selectedHeight = format === "mp4" && quality.value && quality.value !== "source" ? Number(quality.value) : null;
   message(""); setBusy(true);
   element("phase").textContent = "Starting download";
   element("transfer").textContent = "";
@@ -200,7 +202,7 @@ downloadButton.addEventListener("click", async () => {
   element("progress").classList.add("indeterminate");
   element("progress-fill").style.width = "0%";
   try {
-    const output = await invoke<string>("download", { requestId: id, mediaId: media.requestId, format, height: selectedHeight });
+    const output = await invoke<string>("download", { requestId: id, mediaId: media.requestId, format: format === "mp4" && quality.value === "source" ? "source" : format, height: selectedHeight, audioBitrate: format === "mp3" ? Number(quality.value || 192) : null });
     message("Saved to your folder.", "success");
     element("message-text").title = output;
   } catch (error) {

@@ -105,6 +105,42 @@ fn emit_processing(emit: &impl Fn(Progress), request_id: u64) {
 pub async fn run(
     root: &Path,
     args: Vec<String>,
+    cancel: watch::Receiver<bool>,
+    request_id: u64,
+    metadata: bool,
+    emit: impl Fn(Progress) + Send + Sync + Clone + 'static,
+) -> Result<String, String> {
+    run_process(
+        root.join("yt-dlp.exe"),
+        args,
+        cancel,
+        request_id,
+        metadata,
+        emit,
+    )
+    .await
+}
+
+pub async fn tool(
+    root: &Path,
+    name: &str,
+    args: Vec<String>,
+    cancel: watch::Receiver<bool>,
+) -> Result<String, String> {
+    run_process(
+        root.join(name),
+        args,
+        cancel,
+        0,
+        name == "ffprobe.exe",
+        |_| {},
+    )
+    .await
+}
+
+async fn run_process(
+    executable: PathBuf,
+    args: Vec<String>,
     mut cancel: watch::Receiver<bool>,
     request_id: u64,
     metadata: bool,
@@ -113,7 +149,7 @@ pub async fn run(
     if *cancel.borrow() {
         return Err(CANCELLED.into());
     }
-    let mut command = Command::new(root.join("yt-dlp.exe"));
+    let mut command = Command::new(executable);
     command
         .args(args)
         .stdin(Stdio::null())

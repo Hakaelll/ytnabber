@@ -27,6 +27,14 @@ pub enum Format {
     Mp4,
     Mp3,
     M4a,
+    Opus,
+    Source,
+}
+
+impl Format {
+    pub fn is_video(self) -> bool {
+        matches!(self, Self::Mp4 | Self::Source)
+    }
 }
 
 #[derive(Clone, Serialize, Debug)]
@@ -131,11 +139,16 @@ pub fn parse_media(raw: &str, request_id: u64) -> Result<Media, String> {
 
 pub fn format_args(format: Format, height: Option<u32>) -> Vec<String> {
     match format {
-        Format::Mp4 => {
+        Format::Mp4 | Format::Source => {
             let filter = height.map(|h| format!("[height={h}]")).unwrap_or_default();
+            let selection = if format == Format::Mp4 {
+                format!("bv{filter}[vcodec^=avc1]+ba[acodec^=mp4a]/b{filter}[vcodec^=avc1][acodec^=mp4a]/bv{filter}+ba/b{filter}/bv{filter}")
+            } else {
+                format!("bv{filter}+ba/b{filter}/bv{filter}")
+            };
             vec![
                 "-f".into(),
-                format!("bv{filter}+ba/b{filter}/bv{filter}"),
+                selection,
                 "--merge-output-format".into(),
                 "mp4".into(),
                 "--remux-video".into(),
@@ -149,19 +162,29 @@ pub fn format_args(format: Format, height: Option<u32>) -> Vec<String> {
             "--audio-format",
             "mp3",
             "--audio-quality",
-            "0",
+            "192K",
         ]
         .into_iter()
         .map(str::to_owned)
         .collect(),
         Format::M4a => vec![
             "-f",
-            "bestaudio[ext=m4a]/bestaudio/best",
+            "bestaudio[acodec^=mp4a]/bestaudio[acodec=aac]/bestaudio/best",
             "-x",
             "--audio-format",
             "m4a",
             "--audio-quality",
             "0",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect(),
+        Format::Opus => [
+            "-f",
+            "bestaudio[acodec=opus]/bestaudio/best",
+            "-x",
+            "--audio-format",
+            "opus",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -254,5 +277,11 @@ mod tests {
         assert!(format_args(Format::Mp4, Some(720))[1].contains("[height=720]"));
         assert!(!format_args(Format::M4a, None).join(" ").contains("height"));
         assert!(format_args(Format::Mp3, None).contains(&"mp3".to_owned()));
+    }
+    #[test]
+    fn compatible_profiles_prefer_real_codecs_and_default_to_192k() {
+        assert!(format_args(Format::Mp4, Some(1080))[1].contains("[vcodec^=avc1]"));
+        assert!(format_args(Format::M4a, None)[1].contains("[acodec^=mp4a]"));
+        assert!(format_args(Format::Mp3, None).contains(&"192K".to_owned()));
     }
 }

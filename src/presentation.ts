@@ -1,4 +1,4 @@
-export type OutputFormat = "mp4" | "mp3" | "m4a";
+export type OutputFormat = "mp4" | "mp3" | "m4a" | "opus";
 
 export function durationLabel(seconds: number | null): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return "Duration unavailable";

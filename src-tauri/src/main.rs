@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod engine;
+mod media;
 mod model;
 #[cfg(test)]
 mod smoke;
@@ -174,7 +175,7 @@ async fn choose_folder(
     Ok(Some(folder.to_string_lossy().into_owned()))
 }
 
-fn publish(staging: &Path, file: &str, destination: &Path) -> Result<PathBuf, String> {
+fn checked_output(staging: &Path, file: &str) -> Result<PathBuf, String> {
     let staging =
         fs::canonicalize(staging).map_err(|_| "The download staging folder is unavailable.")?;
     let output = fs::canonicalize(file)
@@ -182,6 +183,11 @@ fn publish(staging: &Path, file: &str, destination: &Path) -> Result<PathBuf, St
     if output.parent() != Some(staging.as_path()) || !output.is_file() {
         return Err("The engine did not produce the expected output file.".into());
     }
+    Ok(output)
+}
+
+fn publish(staging: &Path, file: &str, destination: &Path) -> Result<PathBuf, String> {
+    let output = checked_output(staging, file)?;
     let filename = output.file_name().ok_or("Invalid output filename.")?;
     let target = destination.join(filename);
     // MoveFileExW without REPLACE_EXISTING also supports FAT/exFAT destinations.
@@ -221,6 +227,7 @@ async fn download(
     media_id: u64,
     format: Format,
     height: Option<u32>,
+    audio_bitrate: Option<u16>,
 ) -> Result<String, String> {
     let selected = state
         .selection
@@ -231,14 +238,17 @@ async fn download(
     if selected.media.request_id != media_id {
         return Err("The selected video has changed. Try again.".into());
     }
-    if format == Format::Mp4 && !selected.media.has_video {
+    if format.is_video() && !selected.media.has_video {
         return Err("This source has no video track.".into());
     }
-    if format != Format::Mp4 && !selected.media.has_audio {
+    if !format.is_video() && !selected.media.has_audio {
         return Err("This source has no audio track.".into());
     }
-    if height.is_some_and(|h| format != Format::Mp4 || !selected.media.heights.contains(&h)) {
+    if height.is_some_and(|h| !format.is_video() || !selected.media.heights.contains(&h)) {
         return Err("This quality is not available for the selected format.".into());
+    }
+    if audio_bitrate.is_some_and(|b| format != Format::Mp3 || !matches!(b, 128 | 192 | 256 | 320)) {
+        return Err("Choose a supported MP3 bitrate.".into());
     }
     let root = engine::engine_dir(&app)?;
     let folder = state.folder.lock().unwrap().clone();
@@ -257,7 +267,12 @@ async fn download(
             format!("Could not write to this folder (check permissions and free space): {e}")
         })?;
         created_staging = true;
-        let args = engine::download_args(&root, format, height, &staging, &selected.url);
+        let mut args = engine::download_args(&root, format, height, &staging, &selected.url);
+        if let Some(bitrate) = audio_bitrate {
+            if let Some(index) = args.iter().position(|a| a == "--audio-quality") {
+                args[index + 1] = format!("{bitrate}K");
+            }
+        }
         let events = app.clone();
         let file = engine::run(
             &root,
@@ -273,17 +288,40 @@ async fn download(
         if *cancel.borrow() {
             return Err(engine::CANCELLED.into());
         }
-        let target = publish(&staging, file.trim(), &folder)?;
+        let file = checked_output(&staging, file.trim())?;
+        let _ = app.emit(
+            "download-progress",
+            model::Progress {
+                request_id,
+                phase: "processing".into(),
+                percent: None,
+                speed: None,
+                downloaded: None,
+                total: None,
+            },
+        );
+        let file = media::prepare(&root, &file, format, cancel.clone()).await?;
+        if *cancel.borrow() {
+            return Err(engine::CANCELLED.into());
+        }
+        let target = publish(&staging, &file.to_string_lossy(), &folder)?;
         *state.last_file.lock().unwrap() = Some(target.clone());
         Ok::<_, String>(target.to_string_lossy().into_owned())
     }
     .await;
     // Only this operation's newly-created staging directory is ever removed.
-    if created_staging {
+    if created_staging && (result.is_ok() || result.as_ref().is_err_and(|e| e == engine::CANCELLED))
+    {
         let _ = fs::remove_dir_all(&staging);
     }
     finish(&state, "download", request_id);
-    result
+    result.map_err(|error| {
+        if created_staging && error != engine::CANCELLED {
+            format!("{error}\nRecoverable files: {}", staging.display())
+        } else {
+            error
+        }
+    })
 }
 
 #[tauri::command]
