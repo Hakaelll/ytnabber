@@ -15,8 +15,8 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicU64, Ordering},
-        Mutex,
+        atomic::{AtomicU64, AtomicU8, Ordering},
+        Arc, Mutex,
     },
 };
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -322,6 +322,7 @@ async fn download(
         .map(|(_, path)| path)
         .unwrap_or_else(|| folder.join(format!(".ytnabber-{}-{nonce}", std::process::id())));
     let mut created_staging = false;
+    let phase = Arc::new(AtomicU8::new(0));
     let result = async {
         if !resuming {
             fs::create_dir(&staging).map_err(|e| {
@@ -336,6 +337,7 @@ async fn download(
             }
         }
         let events = app.clone();
+        let observed_phase = phase.clone();
         let file = engine::run_process(
             updater::executable(&app, &root)?,
             args,
@@ -343,6 +345,10 @@ async fn download(
             request_id,
             false,
             move |progress| {
+                observed_phase.store(
+                    if progress.phase == "processing" { 2 } else { 1 },
+                    Ordering::SeqCst,
+                );
                 let _ = events.emit("download-progress", progress);
             },
         )
@@ -351,6 +357,7 @@ async fn download(
             return Err(engine::CANCELLED.into());
         }
         let file = checked_output(&staging, file.trim())?;
+        phase.store(2, Ordering::SeqCst);
         let _ = app.emit(
             "download-progress",
             model::Progress {
@@ -396,7 +403,17 @@ async fn download(
                 error
             }
         })
-        .map_err(|raw| record_failure(&state, &raw, "download"))
+        .map_err(|raw| {
+            record_failure(
+                &state,
+                &raw,
+                match phase.load(Ordering::SeqCst) {
+                    0 => "extraction",
+                    1 => "download",
+                    _ => "processing",
+                },
+            )
+        })
 }
 
 #[tauri::command]

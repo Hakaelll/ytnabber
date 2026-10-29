@@ -71,10 +71,9 @@ impl Failure {
         } else if has(&["403", "forbidden"]) {
             ("forbidden", "The source denied access (HTTP 403). Its formats or session requirements may have changed.", false)
         } else if has(&[
-            "missing",
+            "download tools are missing",
             "could not start",
             "no supported javascript runtime",
-            "no such file",
             "not found in path",
         ]) {
             (
@@ -119,6 +118,8 @@ impl Failure {
                 "The destination is not writable. Choose another folder.",
                 false,
             )
+        } else if has(&["this file already exists"]) {
+            ("file_exists", "This file already exists. Rename it or choose another folder. The downloaded file was kept.", false)
         } else if has(&[
             "timed out",
             "timeout",
@@ -146,18 +147,23 @@ impl Failure {
             )
         };
         let retry_after = if code == "rate_limited" {
-            Some(
-                text.split("retry-after")
-                    .nth(1)
-                    .and_then(|s| {
-                        s.trim_start_matches([':', ' ', '='])
-                            .split_whitespace()
-                            .next()
+            let exposed = raw.lines().find_map(|line| {
+                let offset = line.to_lowercase().find("retry-after")?;
+                let value = line[offset + "retry-after".len()..]
+                    .trim_start_matches([':', ' ', '='])
+                    .trim();
+                value
+                    .split_whitespace()
+                    .next()
+                    .and_then(|n| n.parse::<u64>().ok())
+                    .or_else(|| {
+                        httpdate::parse_http_date(value)
+                            .ok()
+                            .and_then(|date| date.duration_since(std::time::SystemTime::now()).ok())
+                            .map(|wait| wait.as_secs() + 1)
                     })
-                    .and_then(|s| s.parse::<u64>().ok())
-                    .unwrap_or(60)
-                    .max(60),
-            )
+            });
+            Some(exposed.unwrap_or(60).max(60))
         } else {
             None
         };
@@ -203,6 +209,17 @@ mod tests {
             Failure::classify("HTTP Error 429\nRetry-After: 120", "download").retry_after,
             Some(120)
         );
+        let tomorrow = std::time::SystemTime::now() + std::time::Duration::from_secs(86400);
+        let wait = Failure::classify(
+            &format!(
+                "HTTP Error 429\nRetry-After: {}",
+                httpdate::fmt_http_date(tomorrow)
+            ),
+            "download",
+        )
+        .retry_after
+        .unwrap();
+        assert!((86390..=86401).contains(&wait));
         let safe = sanitize("ERROR https://host/video?secret=123\nCookie: private\nAuthorization: Bearer hidden\ntoken=secret\nconversion failed");
         assert!(
             !safe.contains("123")

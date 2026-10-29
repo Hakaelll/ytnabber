@@ -136,11 +136,12 @@ secret-bearing diagnostic lines and URLs are redacted before IPC.
 HTTP/fragment/extractor retries are bounded and use exponential sleeps.
 Missing fragments abort instead of silently publishing incomplete media.
 An observed 429 stops the process tree and places the app in a cooldown;
-numeric Retry-After values exposed in diagnostics are honored (minimum 60s).
+Numeric or HTTP-date Retry-After values exposed in diagnostics are honored
+(minimum 60s).
 yt-dlp normally does not expose the server's HTTP response headers through
 its CLI; absent that information the app cannot infer a server-specific
-deadline and uses 60 seconds, with no automatic retry. HTTP-date Retry-After
-parsing remains a limitation. Restarting the app clears the in-memory wait.
+deadline and uses 60 seconds, with no automatic retry. Restarting the app
+clears the in-memory wait.
 
 Fresh checks: 11 native and 5 frontend tests, TypeScript and clippy passed.
 A local HTTP fixture returning 429 to the bundled yt-dlp observed exactly

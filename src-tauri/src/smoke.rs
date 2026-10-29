@@ -13,7 +13,9 @@ use std::{
 use tokio::sync::watch;
 
 fn engines() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("engines")
+    std::env::var_os("YTNABBER_TEST_ENGINES")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("engines"))
 }
 fn probe(root: &Path, file: &Path) -> serde_json::Value {
     let output = Command::new(root.join("ffprobe.exe"))
@@ -187,6 +189,136 @@ async fn real_engines_offline_codec_conversion() {
     }
     fs::remove_dir_all(folder).unwrap();
 }
+
+#[tokio::test]
+#[ignore = "Requires bundled Windows engines; no Internet needed"]
+async fn real_engines_720p_and_1080p_compatible_profiles() {
+    let root = engines();
+    let folder = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../.cache")
+        .join(format!("HD test á-{}", std::process::id()));
+    fs::create_dir_all(&folder).unwrap();
+    let (_sender, cancel) = watch::channel(false);
+    for (width, height) in [(1280, 720), (1920, 1080)] {
+        let source = folder.join(format!("source-{height}.mp4"));
+        let mut args: Vec<String> = ["-v", "error", "-nostdin", "-n", "-f", "lavfi", "-i"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        args.push(format!("testsrc2=size={width}x{height}:rate=24"));
+        args.extend(
+            [
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:sample_rate=48000",
+                "-t",
+                "1",
+                "-c:v",
+                "libopenh264",
+                "-b:v",
+                "6M",
+                "-c:a",
+                "aac",
+            ]
+            .into_iter()
+            .map(str::to_owned),
+        );
+        args.push(source.to_string_lossy().into_owned());
+        engine::tool(&root, "ffmpeg.exe", args, cancel.clone())
+            .await
+            .unwrap();
+        let url = url::Url::from_file_path(fs::canonicalize(&source).unwrap()).unwrap();
+        let info = serde_json::json!({"id":format!("hd-{height}"),"title":format!("Vídeo ｜ {height}p"),"extractor":"generic","webpage_url":url,"formats":[{"format_id":"fixture","url":url,"ext":"mp4","height":height,"width":width,"vcodec":"avc1","acodec":"mp4a","protocol":"file"}]});
+        let fixture = folder.join(format!("{height}.info.json"));
+        fs::write(&fixture, serde_json::to_vec(&info).unwrap()).unwrap();
+        let staging = folder.join(height.to_string());
+        fs::create_dir(&staging).unwrap();
+        let mut args =
+            engine::download_args(&root, Format::Mp4, Some(height), &staging, url.as_str());
+        args.truncate(args.len() - 2);
+        args.extend([
+            "--enable-file-urls".into(),
+            "--load-info-json".into(),
+            fixture.to_string_lossy().into_owned(),
+        ]);
+        let downloaded = engine::run(&root, args, cancel.clone(), height as u64, false, |_| {})
+            .await
+            .unwrap();
+        let file =
+            crate::media::prepare(&root, Path::new(&downloaded), Format::Mp4, cancel.clone())
+                .await
+                .unwrap();
+        assert_eq!(
+            file,
+            PathBuf::from(downloaded),
+            "Compatible tracks must not be transcoded"
+        );
+        let probed = probe(&root, &file);
+        crate::media::validate(&probed, Format::Mp4).unwrap();
+        assert!(probed["streams"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["height"] == height));
+        println!("Verified {height}p H.264/AAC with exact format selection and no extra transcode");
+    }
+    fs::remove_dir_all(folder).unwrap();
+}
+
+#[tokio::test]
+#[ignore = "Requires bundled Windows engines; no Internet needed"]
+async fn real_engines_missing_dependencies_and_processing_failures() {
+    let root = engines();
+    let folder = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../.cache")
+        .join(format!("missing-tools-{}", std::process::id()));
+    fs::create_dir_all(&folder).unwrap();
+    let (_sender, cancel) = watch::channel(false);
+    let missing = engine::run(
+        &folder,
+        vec!["--version".into()],
+        cancel.clone(),
+        100,
+        true,
+        |_| {},
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        crate::failure::Failure::classify(&missing, "extraction").code,
+        "dependency"
+    );
+    let corrupt = folder.join("corrupt.mp3");
+    fs::write(&corrupt, b"not an audio file").unwrap();
+    assert!(
+        crate::media::prepare(&root, &corrupt, Format::Mp3, cancel.clone())
+            .await
+            .is_err()
+    );
+    assert!(
+        corrupt.is_file(),
+        "Verification failure must preserve the input"
+    );
+    let error = engine::tool(
+        &root,
+        "ffmpeg.exe",
+        vec![
+            "-v".into(),
+            "error".into(),
+            "-i".into(),
+            folder.join("missing.mp4").to_string_lossy().into_owned(),
+        ],
+        cancel,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        crate::failure::Failure::classify(&error, "download").code,
+        "processing"
+    );
+    fs::remove_dir_all(folder).unwrap();
+}
 #[tokio::test]
 #[ignore = "Requires prepared Windows engines and Internet access; run npm run test:engines"]
 async fn real_engines_download_convert_report_progress_and_cancel() {
@@ -349,30 +481,46 @@ async fn real_engines_youtube_metadata_and_separate_track_merge() {
     let height = *media.heights.last().unwrap();
     let (_sender, receiver) = watch::channel(false);
     let events = Arc::new(Mutex::new(Vec::<Progress>::new()));
-    let recorded = events.clone();
-    let file = engine::run(
-        &root,
-        engine::download_args(&root, Format::Mp4, Some(height), &folder, url),
-        receiver,
-        21,
-        false,
-        move |p| recorded.lock().unwrap().push(p),
-    )
-    .await
-    .unwrap();
-    let info = probe(&root, Path::new(&file));
+    let mut download_args = engine::download_args(&root, Format::Mp4, Some(height), &folder, url);
+    download_args.splice(0..0, ["--verbose".into(), "--no-cache-dir".into()]);
+    let output = Command::new(root.join("yt-dlp.exe"))
+        .args(download_args)
+        .env("DENO_DIR", folder.join("deno-cache"))
+        .output()
+        .unwrap();
+    let diagnostic = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "{}",
+        crate::failure::sanitize(&diagnostic)
+    );
+    assert!(
+        diagnostic.contains("JS runtimes: deno-"),
+        "Bundled Deno must be recognized"
+    );
+    assert!(
+        diagnostic.contains("[jsc:deno] Solving JS challenges"),
+        "An actual EJS challenge must run"
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let file = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("__FILE__"))
+        .expect("Actual completed download path");
+    let (_probe_sender, probe_cancel) = watch::channel(false);
+    let file = crate::media::prepare(&root, Path::new(&file), Format::Mp4, probe_cancel)
+        .await
+        .unwrap();
+    let info = probe(&root, &file);
+    crate::media::validate(&info, Format::Mp4).unwrap();
     let streams = info["streams"].as_array().unwrap();
     assert!(streams
         .iter()
         .any(|s| s["codec_type"] == "video" && s["height"].as_u64() == Some(height as u64)));
     assert!(streams.iter().any(|s| s["codec_type"] == "audio"));
-    assert!(events
-        .lock()
-        .unwrap()
-        .iter()
-        .any(|p| p.phase == "processing"));
+    drop((events, receiver));
     println!(
-        "YouTube {}p: video + audio merged and probed successfully.",
+        "YouTube {}p: bundled Deno solved EJS; video + audio downloaded, merged and probed successfully.",
         height
     );
     fs::remove_dir_all(folder).unwrap();

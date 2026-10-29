@@ -99,10 +99,10 @@ impl Drop for ProcessTree {
     }
 }
 
-fn emit_processing(emit: &impl Fn(Progress), request_id: u64) {
+fn emit_phase(emit: &impl Fn(Progress), request_id: u64, phase: &str) {
     emit(Progress {
         request_id,
-        phase: "processing".into(),
+        phase: phase.into(),
         percent: None,
         speed: None,
         downloaded: None,
@@ -158,6 +158,11 @@ pub async fn run_process(
     if *cancel.borrow() {
         return Err(CANCELLED.into());
     }
+    let tool_name = executable
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
     let mut command = Command::new(executable);
     command
         .args(args)
@@ -203,7 +208,7 @@ pub async fn run_process(
                 || line.starts_with("[ExtractAudio]")
                 || line.starts_with("[VideoRemuxer]")
             {
-                emit_processing(&err_emit, request_id);
+                emit_phase(&err_emit, request_id, "processing");
                 continue;
             }
             tail.push(line);
@@ -231,7 +236,9 @@ pub async fn run_process(
                     || line.starts_with("[ExtractAudio]")
                     || line.starts_with("[VideoRemuxer]")
                 {
-                    emit_processing(&emit, request_id);
+                    emit_phase(&emit, request_id, "processing");
+                } else if line.starts_with("__TRANSFER__") {
+                    emit_phase(&emit, request_id, "downloading");
                 } else if let Some(file) = line.strip_prefix("__FILE__") {
                     result = file.to_owned();
                 }
@@ -273,11 +280,12 @@ pub async fn run_process(
         }
     })?;
     if !status.success() {
-        return Err(if errors.is_empty() {
+        let error: String = if errors.is_empty() {
             "The download engine stopped unexpectedly. Try another public video URL.".into()
         } else {
             errors.chars().take(2400).collect()
-        });
+        };
+        return Err(format!("{tool_name}: {error}"));
     }
     Ok(result)
 }
@@ -303,6 +311,8 @@ pub fn download_args(
         "download:__PROGRESS__%(progress)j".into(),
         "--progress-template".into(),
         "postprocess:__POST__%(progress)j".into(),
+        "--print".into(),
+        "before_dl:__TRANSFER__".into(),
         "--print".into(),
         "after_move:__FILE__%(filepath)s".into(),
         "--paths".into(),
