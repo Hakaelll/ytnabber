@@ -19,7 +19,7 @@ const folderIcon = '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><pat
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <canvas id="field" aria-hidden="true"></canvas>
   <header class="titlebar" data-tauri-drag-region>
-    <div class="brand" data-tauri-drag-region><img src="/logo.png" alt="" width="16" height="16" draggable="false"><span>YTNabber</span></div>
+    <div class="brand" data-tauri-drag-region><img src="/logo.png" alt="" width="14" height="14" draggable="false"><span>YTNabber</span></div>
     <div class="window-actions">
       <button id="engine-check" aria-label="Check download engine updates" title="Check download engine updates"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12 5a5 5 0 1 0 1 5M12 2v4H8"/></svg></button>
       <button id="minimize" aria-label="Minimize" title="Minimize"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
@@ -43,8 +43,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <div class="quality-field"><label for="quality">Quality</label><select id="quality"><option value="">Best available</option></select></div>
         </div>
         <button id="destination" class="destination" title="Choose download folder">${folderIcon}<span><span class="destination-label">Save to</span><span id="folder"></span></span><span class="change-folder">Change</span></button>
-        <div class="download-actions"><button id="download" class="primary">Download<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3v9m-3-3 3 3 3-3M4 13v3h12v-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button><button id="cancel" class="secondary" hidden>Cancel</button></div>
-        <div id="progress-area" class="progress-area" hidden><div class="progress-copy"><span id="phase">Downloading</span><span id="transfer"></span></div><div id="progress" class="progress" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><div id="progress-fill"></div></div></div>
+        <div class="download-actions"><button id="download" class="primary">Download<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3v9m-3-3 3 3 3-3M4 13v3h12v-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+        <div id="progress-area" class="progress-area" hidden><div class="progress-header"><div class="progress-copy"><span id="phase">Downloading</span><span id="transfer"></span></div><button id="cancel" hidden>Cancel</button></div><div id="progress" class="progress" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><div id="progress-fill"></div></div></div>
         <p id="audio-hint" class="audio-hint" hidden>Converted from the source. Quality cannot exceed the original.</p>
       </section>
       <div id="message" class="message" role="status" aria-live="polite" hidden><span id="message-text"></span><button id="open-folder" hidden>Open folder</button><button id="retry" hidden>Try again</button><button id="copy-error" hidden title="Copy technical details">Copy details</button><button id="engine-install" hidden>Update engine</button><button id="engine-rollback" hidden>Restore previous</button></div>

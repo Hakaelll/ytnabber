@@ -23,6 +23,12 @@ try {
           window.testCalls.push(cmd);
           if (cmd === "plugin:window|is_maximized") return window.testMaximized;
           if (cmd === "startup") return { folder: "C:/Downloads", enginesReady: true, engineError: null };
+          if (cmd === "inspect_media") return { requestId: args.requestId, title: "A short film", duration: 65, thumbnail: null, uploader: "Sample source", heights: [1080, 720], hasAudio: true, hasVideo: true };
+          if (cmd === "download") {
+            window.testDownloadId = args.requestId;
+            return new Promise((resolve, reject) => { window.testFinish = resolve; window.testFail = reject; });
+          }
+          if (cmd === "cancel_job") window.testFail("Cancelled.");
         }, { shouldMockEvents: true });
         await import("/src/main.ts");
       `;
@@ -37,7 +43,7 @@ try {
     const bar = page.locator(".titlebar");
     assert.equal(await bar.evaluate(el => getComputedStyle(el).backgroundColor), "rgba(0, 0, 0, 0)");
     assert.equal(await bar.evaluate(el => getComputedStyle(el).borderBottomWidth), "0px");
-    assert.equal((await bar.boundingBox()).height, 40);
+    assert.equal((await bar.boundingBox()).height, 36);
     assert.equal(await bar.getAttribute("data-tauri-drag-region"), "");
     assert.equal(await page.locator(".brand").getAttribute("data-tauri-drag-region"), "");
     assert.equal(await page.locator(".window-actions").evaluate(el => getComputedStyle(el).getPropertyValue("app-region")), "no-drag");
@@ -82,19 +88,64 @@ try {
     await page.keyboard.press("Enter");
     assert(await page.evaluate(() => window.testCalls.includes("plugin:window|minimize")));
     assert(await page.evaluate(() => window.testCalls.includes("plugin:window|close")));
+    await page.locator("#url").fill("https://example.com/video.mp4");
+    await page.waitForSelector("#main.has-media");
+    await page.waitForTimeout(450);
+    await page.screenshot({ path: `artifacts/download-ready-${scale}x.png` });
+    assert.equal(await page.locator("#load").evaluate(el => getComputedStyle(el).backgroundColor), "rgba(0, 0, 0, 0)");
+    await page.locator("#download").click();
+    await page.waitForFunction(() => Boolean(window.testDownloadId));
+    assert.equal(await page.locator("#cancel").isVisible(), true);
+    assert.equal(await page.locator("#progress-area #cancel").count(), 1);
+    for (const percent of [0, 43.7, 100]) {
+      await page.evaluate(async value => {
+        const { emit } = await import("/node_modules/@tauri-apps/api/event.js");
+        await emit("download-progress", { requestId: window.testDownloadId, phase: "downloading", percent: value, speed: 1048576 });
+      }, percent);
+      assert.equal(await page.locator("#progress").getAttribute("aria-valuenow"), String(percent));
+      if (percent === 43.7) {
+        await page.waitForTimeout(240);
+        const ratio = await page.locator("#progress-fill").evaluate(el => el.getBoundingClientRect().width / el.parentElement.clientWidth);
+        assert(Math.abs(ratio - percent / 100) < .01);
+        await page.screenshot({ path: `artifacts/download-progress-${scale}x.png` });
+      }
+    }
+    await page.evaluate(async () => {
+      const { emit } = await import("/node_modules/@tauri-apps/api/event.js");
+      await emit("download-progress", { requestId: window.testDownloadId, phase: "processing", percent: null, speed: null });
+    });
+    assert.equal(await page.locator("#progress").getAttribute("aria-valuenow"), null);
+    assert.equal(await page.locator("#phase").innerText(), "Processing media");
     await page.setViewportSize({ width: 430, height: 630 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    assert.equal(await page.locator("main").evaluate(el => el.scrollWidth > el.clientWidth), false);
+    await page.locator("#progress-area").scrollIntoViewIfNeeded();
+    const progressBox = await page.locator("#progress-area").boundingBox();
+    assert(progressBox.y + progressBox.height <= 630);
+    await page.screenshot({ path: `artifacts/download-compact-${scale}x.png` });
     await page.emulateMedia({ reducedMotion: "reduce" });
     assert.equal(await maximize.evaluate(el => getComputedStyle(el).transitionDuration), "0s");
+    assert.equal(await page.locator("#progress-fill").evaluate(el => getComputedStyle(el).animationName), "none");
     await page.emulateMedia({ contrast: "more" });
     assert.equal(await bar.evaluate(el => getComputedStyle(el).backgroundColor), "rgb(10, 10, 10)");
     assert.equal(await maximize.evaluate(el => getComputedStyle(el, "::before").backdropFilter), "none");
     await page.emulateMedia({ forcedColors: "active" });
     assert.equal(await page.locator("#close").evaluate(el => getComputedStyle(el, "::before").display), "none");
+    await page.locator("#cancel").click();
+    await page.waitForFunction(() => document.querySelector("#message-text").textContent === "Download cancelled.");
+    assert.equal(await page.locator("#progress-area").isVisible(), false);
+    assert.equal(await page.locator("#download").isVisible(), true);
+    await page.locator("#download").click();
+    await page.evaluate(() => window.testFinish("C:/Downloads/video.mp4"));
+    await page.waitForFunction(() => document.querySelector("#message").dataset.kind === "success");
+    await page.locator("#download").click();
+    await page.evaluate(() => window.testFail("Your disk is full."));
+    await page.waitForFunction(() => document.querySelector("#message").dataset.kind === "error");
+    assert.equal(await page.locator("#progress-area").isVisible(), false);
     assert.deepEqual(errors, []);
     await page.close();
   }
-  console.log("Titlebar checks passed at 100%, 150% and 200%: background, controls, restore state, keyboard, compact layout and accessibility preferences.");
+  console.log("Interface checks passed at 100%, 150% and 200%: titlebar, source field, download, progress, processing, cancel, success, error, keyboard, compact layout and accessibility preferences.");
 } finally {
   await browser.close();
 }
