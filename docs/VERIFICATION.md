@@ -2,6 +2,20 @@
 
 Verified on 29 October 2026 in the project's Windows x64 development environment.
 
+## Titlebar redesign checks
+
+The transparent 40px titlebar was checked separately after the original release verification below:
+
+- `npm test`: 5 passed after integrating the latest remote changes.
+- `cargo test --manifest-path src-tauri/Cargo.toml`: 14 passed, 9 opt-in engine/network tests ignored after integration.
+- `npm run build`: TypeScript and production assets passed.
+- `tests/titlebar.browser.mjs`: passed in headless Edge at device scales 1, 1.5 and 2. It checks a continuous animated character field behind the transparent titlebar, no divider, aligned logo/control centers, hover and pressed states, minimize/maximize/close IPC, maximize/restore icon and accessible label synchronization on resize, keyboard activation/focus, compact layout, reduced motion, increased contrast and forced colors. Tauri IPC and events are mocked; this is not a native Windows interaction test.
+- Before integrating the remote engine/format additions, the existing complete UI check passed for animation, metadata, formats, destination, progress, processing, cancellation, success and compact layout. The titlebar check and frontend/native suites above were repeated after integration.
+
+To repeat the titlebar check, start `npm run dev`, make an existing Playwright installation resolvable (or set `PLAYWRIGHT_MODULE` to its module path), then run `node tests/titlebar.browser.mjs`. Microsoft Edge must be installed. The check saves screenshots under the ignored `artifacts/` directory; it adds no application dependency.
+
+Native drag, double-click, edge resizing, physical multi-monitor DPI changes and Windows snapping were not interactively verified for this change: the user requested no Computer Use. The existing Tauri window configuration is unchanged, and drag/double-click handling now uses the framework's documented mechanism. No new installer or GitHub release was published for this source change.
+
 ## Results
 
 | Check | Evidence |
