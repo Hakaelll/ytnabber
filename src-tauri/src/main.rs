@@ -1,10 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod engine;
+mod failure;
 mod media;
 mod model;
 #[cfg(test)]
 mod smoke;
 
+use failure::Failure;
 use model::{Format, Media, Selection};
 use serde::Serialize;
 use std::{
@@ -27,6 +29,7 @@ struct AppState {
     folder: Mutex<PathBuf>,
     last_file: Mutex<Option<PathBuf>>,
     latest_metadata: AtomicU64,
+    retry_at: Mutex<Option<std::time::Instant>>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -37,6 +40,14 @@ struct Startup {
 }
 
 fn begin(state: &AppState, kind: &str, id: u64) -> Result<watch::Receiver<bool>, String> {
+    if let Some(until) = *state.retry_at.lock().unwrap() {
+        let seconds = until
+            .saturating_duration_since(std::time::Instant::now())
+            .as_secs();
+        if seconds > 0 {
+            return Err(format!("HTTP Error 429. Retry-After: {}", seconds + 1));
+        }
+    }
     let mut jobs = state.jobs.lock().unwrap();
     if kind == "metadata" {
         if id < state.latest_metadata.load(Ordering::SeqCst) {
@@ -96,7 +107,7 @@ async fn inspect_media(
     state: State<'_, AppState>,
     url: String,
     request_id: u64,
-) -> Result<Media, String> {
+) -> Result<Media, Failure> {
     let url = model::validate_url(&url)?;
     let root = engine::engine_dir(&app)?;
     let cancel = begin(&state, "metadata", request_id)?;
@@ -124,7 +135,16 @@ async fn inspect_media(
     }
     drop(jobs);
     finish(&state, "metadata", request_id);
-    result
+    result.map_err(|raw| record_failure(&state, &raw, "extraction"))
+}
+
+fn record_failure(state: &AppState, raw: &str, phase: &'static str) -> Failure {
+    let error = Failure::classify(raw, phase);
+    if let Some(seconds) = error.retry_after {
+        *state.retry_at.lock().unwrap() =
+            std::time::Instant::now().checked_add(std::time::Duration::from_secs(seconds));
+    }
+    error
 }
 
 #[tauri::command]
@@ -228,7 +248,7 @@ async fn download(
     format: Format,
     height: Option<u32>,
     audio_bitrate: Option<u16>,
-) -> Result<String, String> {
+) -> Result<String, Failure> {
     let selected = state
         .selection
         .lock()
@@ -315,13 +335,15 @@ async fn download(
         let _ = fs::remove_dir_all(&staging);
     }
     finish(&state, "download", request_id);
-    result.map_err(|error| {
-        if created_staging && error != engine::CANCELLED {
-            format!("{error}\nRecoverable files: {}", staging.display())
-        } else {
-            error
-        }
-    })
+    result
+        .map_err(|error| {
+            if created_staging && error != engine::CANCELLED {
+                format!("{error}\nRecoverable files: {}", staging.display())
+            } else {
+                error
+            }
+        })
+        .map_err(|raw| record_failure(&state, &raw, "download"))
 }
 
 #[tauri::command]
@@ -404,5 +426,13 @@ mod tests {
         assert!(state.jobs.lock().unwrap().contains_key("metadata"));
         begin(&state, "download", 3).unwrap();
         assert!(begin(&state, "download", 4).is_err());
+    }
+    #[test]
+    fn rate_limits_block_new_metadata_and_download_requests() {
+        let state = AppState::default();
+        record_failure(&state, "HTTP Error 429\nRetry-After: 120", "extraction");
+        assert!(begin(&state, "metadata", 1).unwrap_err().contains("429"));
+        assert!(begin(&state, "download", 2).unwrap_err().contains("429"));
+        assert!(state.jobs.lock().unwrap().is_empty());
     }
 }

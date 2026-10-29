@@ -32,7 +32,6 @@ pub fn base_args(root: &Path) -> Vec<String> {
         "--ignore-config".into(),
         "--no-plugin-dirs".into(),
         "--no-playlist".into(),
-        "--no-warnings".into(),
         "--no-color".into(),
         "--encoding".into(),
         "utf-8".into(),
@@ -48,6 +47,15 @@ pub fn base_args(root: &Path) -> Vec<String> {
         "2".into(),
         "--extractor-retries".into(),
         "2".into(),
+        "--fragment-retries".into(),
+        "2".into(),
+        "--abort-on-unavailable-fragments".into(),
+        "--retry-sleep".into(),
+        "http:exp=2:30".into(),
+        "--retry-sleep".into(),
+        "fragment:exp=2:30".into(),
+        "--retry-sleep".into(),
+        "extractor:exp=2:30".into(),
     ]
 }
 
@@ -172,10 +180,19 @@ async fn run_process(
         .take()
         .ok_or("Could not read process errors.")?;
     let err_emit = emit.clone();
+    let (rate_limited, mut rate_limit) = watch::channel(false);
+    let _rate_guard = rate_limited.clone();
     let mut err_task = tokio::spawn(async move {
         let mut lines = BufReader::new(stderr).lines();
         let mut tail = Vec::new();
         while let Ok(Some(line)) = lines.next_line().await {
+            let lower = line.to_lowercase();
+            if lower.contains("http error 429")
+                || lower.contains("http 429")
+                || lower.contains("too many requests")
+            {
+                let _ = rate_limited.send(true);
+            }
             if let Some(progress) = parse_progress(&line, request_id) {
                 err_emit(progress);
                 continue;
@@ -229,6 +246,7 @@ async fn run_process(
         Duration::from_secs(24 * 60 * 60)
     };
     let outcome = tokio::select! {
+        _ = rate_limit.changed() => Err("RATE_LIMITED".to_owned()),
         _ = cancel.changed() => Err(CANCELLED.to_owned()),
         _ = tokio::time::sleep(timeout) => Err("The source timed out. Check your connection and try again.".to_owned()),
         result = output => result,
@@ -246,7 +264,13 @@ async fn run_process(
             String::new()
         }
     };
-    let (status, result) = outcome?;
+    let (status, result) = outcome.map_err(|error| {
+        if error == "RATE_LIMITED" {
+            format!("HTTP Error 429\n{errors}")
+        } else {
+            error
+        }
+    })?;
     if !status.success() {
         return Err(if errors.is_empty() {
             "The download engine stopped unexpectedly. Try another public video URL.".into()

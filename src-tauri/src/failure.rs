@@ -1,0 +1,215 @@
+use serde::Serialize;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Failure {
+    pub code: &'static str,
+    pub message: &'static str,
+    pub technical: String,
+    pub retryable: bool,
+    pub retry_after: Option<u64>,
+    pub phase: &'static str,
+}
+
+pub fn sanitize(raw: &str) -> String {
+    raw.lines()
+        .map(|line| {
+            let lower = line.to_lowercase();
+            if [
+                "cookie",
+                "authorization",
+                "password",
+                "token",
+                "signature",
+                "sig=",
+            ]
+            .iter()
+            .any(|s| lower.contains(s))
+            {
+                return "[Sensitive diagnostic redacted]".to_owned();
+            }
+            line.split_whitespace()
+                .map(|word| {
+                    if word.contains("http://") || word.contains("https://") {
+                        "[URL redacted]"
+                    } else {
+                        word
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .chars()
+        .take(2400)
+        .collect()
+}
+
+impl Failure {
+    pub fn classify(raw: &str, phase: &'static str) -> Self {
+        let text = raw.to_lowercase();
+        let has = |items: &[&str]| items.iter().any(|s| text.contains(s));
+        let (code, message, retryable) = if raw == crate::engine::CANCELLED {
+            ("cancelled", "Download cancelled.", false)
+        } else if has(&["429", "too many requests", "rate_limited"]) {
+            (
+                "rate_limited",
+                "The server is limiting requests. Wait before trying again.",
+                true,
+            )
+        } else if has(&[
+            "not a bot",
+            "not bot",
+            "sign in",
+            "login required",
+            "private video",
+            "members-only",
+            "age-restricted",
+        ]) {
+            ("authentication", "This source requires sign-in or session verification. Try a public video or try again later.", false)
+        } else if has(&["403", "forbidden"]) {
+            ("forbidden", "The source denied access (HTTP 403). Its formats or session requirements may have changed.", false)
+        } else if has(&[
+            "missing",
+            "could not start",
+            "no supported javascript runtime",
+            "no such file",
+            "not found in path",
+        ]) {
+            (
+                "dependency",
+                "A required download tool is missing or cannot start. Repair the installation.",
+                false,
+            )
+        } else if has(&["deno", "javascript", "challenge solver"]) {
+            ("javascript", "The JavaScript challenge could not be solved. Check the engine version and runtime.", false)
+        } else if has(&["requested format", "no downloadable formats"]) {
+            (
+                "format_unavailable",
+                "This quality is no longer available. Reload the link or choose another quality.",
+                false,
+            )
+        } else if has(&[
+            "ffmpeg",
+            "ffprobe",
+            "postprocess",
+            "conversion failed",
+            "generated codecs",
+        ]) {
+            (
+                "processing",
+                "The media could not be processed or verified. Recoverable files were kept.",
+                false,
+            )
+        } else if has(&[
+            "disk full",
+            "no space left",
+            "not enough space",
+            "winerror 112",
+        ]) {
+            (
+                "disk_full",
+                "Your disk is full. Free space or choose another folder.",
+                false,
+            )
+        } else if has(&["permission denied", "access is denied", "winerror 5"]) {
+            (
+                "permission",
+                "The destination is not writable. Choose another folder.",
+                false,
+            )
+        } else if has(&[
+            "timed out",
+            "timeout",
+            "connection",
+            "network",
+            "name resolution",
+            "http error 5",
+        ]) {
+            (
+                "network",
+                "Could not reach the source. Check your connection and try again.",
+                true,
+            )
+        } else if has(&["404", "not available", "unavailable", "removed"]) {
+            (
+                "unavailable",
+                "This video is unavailable. Check the link or try another video.",
+                false,
+            )
+        } else {
+            (
+                "extraction",
+                "The operation failed. Open the technical details for recovery information.",
+                false,
+            )
+        };
+        let retry_after = if code == "rate_limited" {
+            Some(
+                text.split("retry-after")
+                    .nth(1)
+                    .and_then(|s| {
+                        s.trim_start_matches([':', ' ', '='])
+                            .split_whitespace()
+                            .next()
+                    })
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .unwrap_or(60)
+                    .max(60),
+            )
+        } else {
+            None
+        };
+        Self {
+            code,
+            message,
+            technical: sanitize(raw),
+            retryable,
+            retry_after,
+            phase,
+        }
+    }
+}
+
+impl From<String> for Failure {
+    fn from(value: String) -> Self {
+        Self::classify(&value, "operation")
+    }
+}
+impl From<&str> for Failure {
+    fn from(value: &str) -> Self {
+        Self::classify(value, "operation")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn classifies_causes_and_redacts_secrets() {
+        for (raw, code) in [
+            ("HTTP Error 429; Retry-After: 120", "rate_limited"),
+            ("Sign in to confirm you're not a bot", "authentication"),
+            ("HTTP Error 403: Forbidden", "forbidden"),
+            ("Requested format is not available", "format_unavailable"),
+            ("No supported JavaScript runtime", "dependency"),
+            ("FFmpeg conversion failed", "processing"),
+            ("Connection reset", "network"),
+        ] {
+            assert_eq!(Failure::classify(raw, "download").code, code);
+        }
+        assert_eq!(
+            Failure::classify("HTTP Error 429\nRetry-After: 120", "download").retry_after,
+            Some(120)
+        );
+        let safe = sanitize("ERROR https://host/video?secret=123\nCookie: private\nAuthorization: Bearer hidden\ntoken=secret\nconversion failed");
+        assert!(
+            !safe.contains("123")
+                && !safe.contains("private")
+                && !safe.contains("hidden")
+                && !safe.contains("secret")
+        );
+        assert!(safe.contains("conversion failed"));
+    }
+}

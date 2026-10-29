@@ -124,6 +124,29 @@ yt-dlp selectors and processing path for compatible MP4, original MP4, MP3,
 M4A and Opus, validated every output with FFprobe and fully decoded each.
 All five passed. This is not a clean-machine or Windows-player check.
 
+### Error and retry correction block
+
+Extraction/download commands return structured codes, user guidance, phase,
+sanitized technical details, retryability and an optional wait. Bot/session
+verification is distinct from throttling. HTTP 403 is reported as access
+denial without assuming a PO-token cause. No cookies or credentials are read.
+Details are available through the inline Copy details action and tooltip;
+secret-bearing diagnostic lines and URLs are redacted before IPC.
+
+HTTP/fragment/extractor retries are bounded and use exponential sleeps.
+Missing fragments abort instead of silently publishing incomplete media.
+An observed 429 stops the process tree and places the app in a cooldown;
+numeric Retry-After values exposed in diagnostics are honored (minimum 60s).
+yt-dlp normally does not expose the server's HTTP response headers through
+its CLI; absent that information the app cannot infer a server-specific
+deadline and uses 60 seconds, with no automatic retry. HTTP-date Retry-After
+parsing remains a limitation. Restarting the app clears the in-memory wait.
+
+Fresh checks: 11 native and 5 frontend tests, TypeScript and clippy passed.
+A local HTTP fixture returning 429 to the bundled yt-dlp observed exactly
+one request. A state test confirmed cooldown blocks both metadata and
+download starts. No source-site throttling was deliberately induced.
+
 Baseline figures above were measured in this run. Historical 0.1.0 checks are
 recorded separately in VERIFICATION.md and are not fresh 0.1.1 results.
 Clean Windows 10/11 installation, upgrade/uninstall and real player checks

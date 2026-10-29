@@ -37,6 +37,59 @@ fn probe(root: &Path, file: &Path) -> serde_json::Value {
 }
 
 #[tokio::test]
+#[ignore = "Requires bundled Windows engines; uses only a local HTTP fixture"]
+async fn real_engines_stop_on_http_429() {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        sync::atomic::{AtomicUsize, Ordering},
+        time::{Duration, Instant},
+    };
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let count = Arc::new(AtomicUsize::new(0));
+    let requests = count.clone();
+    let server = std::thread::spawn(move || {
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(4) {
+            if let Ok((mut socket, _)) = listener.accept() {
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(1)))
+                    .unwrap();
+                let mut buffer = [0; 4096];
+                let _ = socket.read(&mut buffer);
+                requests.fetch_add(1, Ordering::SeqCst);
+                let _ = socket.write_all(b"HTTP/1.1 429 Too Many Requests\r\nRetry-After: 120\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            } else {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+    });
+    let root = engines();
+    let (_sender, cancel) = watch::channel(false);
+    let mut args = engine::base_args(&root);
+    args.extend([
+        "--dump-single-json".into(),
+        "--".into(),
+        format!("http://{address}/fixture.mp4"),
+    ]);
+    let raw = engine::run(&root, args, cancel, 99, true, |_| {})
+        .await
+        .unwrap_err();
+    assert_eq!(
+        crate::failure::Failure::classify(&raw, "extraction").code,
+        "rate_limited"
+    );
+    server.join().unwrap();
+    assert_eq!(
+        count.load(Ordering::SeqCst),
+        1,
+        "No immediate HTTP retries allowed"
+    );
+}
+
+#[tokio::test]
 #[ignore = "Requires bundled Windows engines; no Internet needed"]
 async fn real_engines_offline_codec_conversion() {
     let root = engines();

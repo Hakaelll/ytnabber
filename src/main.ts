@@ -3,7 +3,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { startGraphics } from "./graphics";
-import { bytesLabel, durationLabel, errorLabel, validWebUrl, type OutputFormat } from "./presentation";
+import { bytesLabel, durationLabel, errorLabel, errorDetails, isCancelled, canRetry, validWebUrl, type OutputFormat } from "./presentation";
 
 interface Media {
   requestId: number; title: string; duration: number | null; thumbnail: string | null;
@@ -45,7 +45,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <div id="progress-area" class="progress-area" hidden><div class="progress-copy"><span id="phase">Downloading</span><span id="transfer"></span></div><div id="progress" class="progress" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><div id="progress-fill"></div></div></div>
         <p id="audio-hint" class="audio-hint" hidden>Converted from the source. Quality cannot exceed the original.</p>
       </section>
-      <div id="message" class="message" role="status" aria-live="polite" hidden><span id="message-text"></span><button id="open-folder" hidden>Open folder</button><button id="retry" hidden>Try again</button></div>
+      <div id="message" class="message" role="status" aria-live="polite" hidden><span id="message-text"></span><button id="open-folder" hidden>Open folder</button><button id="retry" hidden>Try again</button><button id="copy-error" hidden title="Copy technical details">Copy details</button></div>
     </section>
   </main>
 
@@ -90,10 +90,23 @@ function message(text: string, kind = "info", retry = false) {
   element("message-text").textContent = text;
   element("open-folder").hidden = kind !== "success";
   element("retry").hidden = !retry;
+  element("copy-error").hidden = true;
+  element("message-text").title = "";
   if (text) requestAnimationFrame(() => element("message").scrollIntoView({
     block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
   }));
 }
+let lastError = "";
+function showError(error: unknown, retry = false) {
+  message(errorLabel(error), "error", retry && canRetry(error));
+  lastError = errorDetails(error);
+  element("message-text").title = lastError;
+  element("copy-error").hidden = false;
+}
+element("copy-error").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(lastError); element("copy-error").textContent = "Copied"; }
+  catch { element("message-text").textContent = lastError; }
+});
 function setLoading(value: boolean) {
   loading = value;
   element("source-form").classList.toggle("is-loading", value);
@@ -163,7 +176,7 @@ async function inspect(force = false) {
     options(); setBusy(false);
     main.classList.add("has-media"); details.inert = false;
   } catch (error) {
-    if (thisGeneration === generation && String(error) !== "Cancelled.") message(errorLabel(error), "error", true);
+    if (thisGeneration === generation && !isCancelled(error)) showError(error, true);
   } finally {
     if (thisGeneration === generation) { setLoading(false); request = 0; inspectingUrl = ""; }
   }
@@ -206,8 +219,8 @@ downloadButton.addEventListener("click", async () => {
     message("Saved to your folder.", "success");
     element("message-text").title = output;
   } catch (error) {
-    if (String(error) === "Cancelled.") message("Download cancelled.");
-    else message(errorLabel(error), "error");
+    if (isCancelled(error)) message("Download cancelled.");
+    else showError(error);
   } finally { activeDownload = 0; setBusy(false); input.focus(); }
 });
 cancelButton.addEventListener("click", async () => {
