@@ -37,4 +37,4 @@ Each subprocess belongs to a Windows Job Object with kill-on-close behavior, so 
 
 ## Validation
 
-See VERIFICATION.md for actual passing checks, measured resource usage and the current source-level YouTube verification block.
+See VERIFICATION.md for passing checks, measured resource usage, YouTube verification results and source-availability limits.
