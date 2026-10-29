@@ -28,7 +28,8 @@ export function errorLabel(error: unknown): string {
   const raw = String(error).replace(/\x1b\[[0-9;]*m/g, "").replace(/^ERROR:\s*/gm, "").trim();
   if (/no space left|disk full|not enough space|WinError 112/i.test(raw)) return "Your disk is full. Free up space or choose another folder.";
   if (/permission denied|access is denied|WinError 5/i.test(raw)) return "This folder is not writable. Choose another destination.";
-  if (/private video|sign in|login required|members.only|age.restricted|cookies|confirm.*bot/i.test(raw)) return "This video requires access or sign-in. Try a publicly available video.";
+  if (/confirm.*not.*bot|automated queries|too many requests|HTTP Error 429/i.test(raw)) return "The source is temporarily blocking requests from this connection. Try again later.";
+  if (/private video|sign in|login required|members.only|age.restricted/i.test(raw)) return "This video requires access or sign-in. Try a publicly available video.";
   if (/requested format.*not available/i.test(raw)) return "This quality is no longer available. Load the link again or select Best available.";
   if (/not available|unavailable|removed|not found|404/i.test(raw)) return "This video is unavailable. Check the link or try another video.";
   if (/unsupported url|no suitable extractor/i.test(raw)) return "This link is not supported. Paste a direct video URL.";
@@ -36,5 +37,3 @@ export function errorLabel(error: unknown): string {
   if (/ffmpeg|ffprobe|conversion failed/i.test(raw) && !/missing/.test(raw)) return "The media could not be processed. Try another format or source.";
   return raw.slice(0, 500) || "Something went wrong. Try again.";
 }
-
-

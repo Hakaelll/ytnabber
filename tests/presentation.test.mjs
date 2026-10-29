@@ -16,6 +16,12 @@ test("only complete HTTP URLs without credentials reach the native boundary", ()
 test("actionable failures retain useful recovery guidance", () => {
   assert.match(errorLabel("ERROR: No space left on device"), /disk is full/);
   assert.match(errorLabel("Requested format is not available"), /no longer available/);
-  assert.match(errorLabel("Sign in to confirm you are not a bot"), /publicly available/);
+  assert.match(errorLabel("Sign in to confirm you are not a bot"), /temporarily blocking/);
 });
 
+
+test("source bot checks are distinct from private videos and incidental cookie hints", () => {
+  assert.match(errorLabel("Sign in to confirm you're not a bot. Use --cookies for authentication."), /temporarily blocking/);
+  assert.match(errorLabel("Private video. Sign in if you have access."), /requires access/);
+  assert.doesNotMatch(errorLabel("Unable to download: connection reset; cookie documentation is available"), /requires access/);
+});

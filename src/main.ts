@@ -62,7 +62,7 @@ const destination = element<HTMLButtonElement>("destination");
 const formatButtons = [...document.querySelectorAll<HTMLButtonElement>("[data-format]")];
 let media: Media | null = null;
 let format: OutputFormat = "mp4";
-let generation = 0;
+let generation = Date.now();
 let request = 0;
 let activeDownload = 0;
 let busy = false;
@@ -70,6 +70,7 @@ let ready = false;
 let loading = false;
 let debounce: ReturnType<typeof setTimeout> | undefined;
 let lastLoaded = "";
+let inspectingUrl = "";
 let stopped = false;
 
 startGraphics(element<HTMLCanvasElement>("field"), element<HTMLCanvasElement>("emblem"));
@@ -134,13 +135,14 @@ async function inspect(force = false) {
   clearTimeout(debounce);
   if (!ready || busy) return;
   const url = input.value.trim();
+  if (loading && url === inspectingUrl) return;
   if (!validWebUrl(url)) { message("Paste a complete HTTP or HTTPS video link.", "error"); return; }
   if (!force && url === lastLoaded) return;
   const thisGeneration = ++generation;
   const previous = request;
   request = thisGeneration;
   if (previous) void invoke("cancel_job", { kind: "metadata", requestId: previous }).catch(() => {});
-  resetDetails(); message(""); setLoading(true);
+  resetDetails(); message(""); inspectingUrl = url; setLoading(true);
   try {
     const result = await invoke<Media>("inspect_media", { url, requestId: thisGeneration });
     if (thisGeneration !== generation) return;
@@ -161,7 +163,7 @@ async function inspect(force = false) {
   } catch (error) {
     if (thisGeneration === generation && String(error) !== "Cancelled.") message(errorLabel(error), "error", true);
   } finally {
-    if (thisGeneration === generation) { setLoading(false); request = 0; }
+    if (thisGeneration === generation) { setLoading(false); request = 0; inspectingUrl = ""; }
   }
 }
 element("source-form").addEventListener("submit", event => { event.preventDefault(); void inspect(true); });
@@ -169,7 +171,7 @@ input.addEventListener("input", () => {
   clearTimeout(debounce);
   ++generation;
   if (request) void invoke("cancel_job", { kind: "metadata", requestId: request }).catch(() => {});
-  request = 0; setLoading(false); resetDetails();
+  request = 0; inspectingUrl = ""; setLoading(false); resetDetails();
   if (ready) message("");
   if (validWebUrl(input.value.trim())) debounce = setTimeout(() => void inspect(), 500);
 });
