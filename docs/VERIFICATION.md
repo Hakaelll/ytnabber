@@ -8,13 +8,14 @@ Verified on 29 October 2026 in the project's Windows x64 development environment
 | --- | --- |
 | TypeScript and production frontend | npm run build passed; Vite emitted the production assets. |
 | Frontend regression tests | 4 tests passed with npm test. |
-| Native unit tests | 7 passed; the 3 opt-in network tests are intentionally ignored by the default command. |
+| Native unit tests | 7 passed; opt-in network tests are intentionally ignored by the default command. The initial release had 3; a fourth conversion-cancellation check was added afterward. |
 | Native warnings and formatting | cargo clippy -- -D warnings and cargo fmt -- --check passed. |
 | Direct MP4 download | A real 788,493-byte MP4 was downloaded and inspected with the bundled ffprobe. |
 | MP3 conversion | A real 296,372-byte audio-only MP3 was produced and probed. |
 | M4A extraction | A real 204,490-byte audio-only AAC/M4A was produced and probed. |
 | Progress and conversion | Integration checks observed actual transfer events and separate indeterminate processing events. |
 | Cancellation | An active rate-limited transfer was cancelled in about 2.6 seconds, without a final MP4 being published. |
+| Cancellation during conversion | A later real-engine check cancelled FFmpeg after it had begun writing an MP3, then successfully removed the unlocked partial files. |
 | Missing source | A public HTTP 404 source returned a recoverable failure. |
 | Existing file protection | Native tests confirmed the existing file remained unchanged. |
 | Windows filename regression | The actual failure was reproduced with a fullwidth separator. Forcing UTF-8 fixed it; the test also passes with an accented destination and title. |

@@ -261,3 +261,68 @@ async fn real_engines_windows_filename_regression() {
     fs::remove_dir_all(folder).unwrap();
     drop(sender);
 }
+
+#[tokio::test]
+#[ignore = "Requires prepared Windows engines and Internet access; run npm run test:engines"]
+async fn real_engines_cancel_during_ffmpeg_conversion() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let root = engines();
+    let folder = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../.cache")
+        .join(format!(
+            "conversion-cancel-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+    fs::create_dir_all(&folder).unwrap();
+    let (sender, receiver) = watch::channel(false);
+    let started = Arc::new(AtomicBool::new(false));
+    let output_seen = Arc::new(AtomicBool::new(false));
+    let checked_output = output_seen.clone();
+    let destination = folder.clone();
+    let mut args = engine::download_args(
+        &root,
+        Format::Mp3,
+        None,
+        &folder,
+        "https://www.w3schools.com/html/mov_bbb.mp4",
+    );
+    // Read at source speed so the test can cancel a live FFmpeg process rather than a finished conversion.
+    args.splice(0..0, ["--postprocessor-args".into(), "ffmpeg_i:-re".into()]);
+    let result = engine::run(&root, args, receiver, 40, false, move |progress| {
+        if progress.phase == "processing" && !started.swap(true, Ordering::SeqCst) {
+            let sender = sender.clone();
+            let destination = destination.clone();
+            let checked_output = checked_output.clone();
+            tokio::spawn(async move {
+                for _ in 0..40 {
+                    let writing = fs::read_dir(&destination).unwrap().any(|entry| {
+                        entry
+                            .unwrap()
+                            .path()
+                            .extension()
+                            .is_some_and(|ext| ext == "mp3")
+                    });
+                    if writing {
+                        checked_output.store(true, Ordering::SeqCst);
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                        let _ = sender.send(true);
+                        return;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
+                let _ = sender.send(true);
+            });
+        }
+    })
+    .await;
+    assert_eq!(result.unwrap_err(), engine::CANCELLED);
+    assert!(
+        output_seen.load(Ordering::SeqCst),
+        "FFmpeg must have started writing the MP3 before cancellation"
+    );
+    fs::remove_dir_all(folder).unwrap();
+    println!("Cancelled a live FFmpeg conversion and removed its unlocked partial files.");
+}

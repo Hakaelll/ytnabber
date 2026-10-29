@@ -80,7 +80,7 @@ Prepared engines and an Internet connection enable the opt-in integration checks
 npm run test:engines
 ~~~
 
-These checks download a short public MP4, produce and probe MP4/MP3/M4A outputs, inspect real transfer and conversion events, cancel an active transfer, reject a missing source, verify Unicode filenames, and download/merge separate YouTube video and audio tracks. They depend on external sites remaining available. Normal unit tests do not need Internet access once dependencies have been installed.
+These checks download a short public MP4, produce and probe MP4/MP3/M4A outputs, inspect real transfer and conversion events, cancel an active transfer and a live FFmpeg conversion, reject a missing source, verify Unicode filenames, and download/merge separate YouTube video and audio tracks. They depend on external sites remaining available. Normal unit tests do not need Internet access once dependencies have been installed.
 
 See [verification and measurements](docs/VERIFICATION.md) for the results and limits of this release.
 
