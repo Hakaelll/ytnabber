@@ -18,13 +18,13 @@ const folderIcon = '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><pat
 
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <canvas id="field" aria-hidden="true"></canvas>
-  <header class="titlebar">
-    <div class="brand"><img src="/logo.png" alt="" width="19" height="19"><span>ytnabber</span></div>
+  <header class="titlebar" data-tauri-drag-region>
+    <div class="brand" data-tauri-drag-region><img src="/logo.png" alt="" width="14" height="14" draggable="false"><span>YTNabber</span></div>
     <div class="window-actions">
-      <button id="engine-check" aria-label="Check download engine updates" title="Check download engine updates"><svg viewBox="0 0 16 16"><path d="M12 5a5 5 0 1 0 1 5M12 2v4H8"/></svg></button>
-      <button id="minimize" aria-label="Minimize" title="Minimize"><svg viewBox="0 0 16 16"><path d="M3 8.5h10"/></svg></button>
-      <button id="maximize" aria-label="Maximize or restore" title="Maximize or restore"><svg viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx=".5"/></svg></button>
-      <button id="close" aria-label="Close" title="Close"><svg viewBox="0 0 16 16"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
+      <button id="engine-check" aria-label="Check download engine updates" title="Check download engine updates"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12 5a5 5 0 1 0 1 5M12 2v4H8"/></svg></button>
+      <button id="minimize" aria-label="Minimize" title="Minimize"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
+      <button id="maximize" aria-label="Maximize" title="Maximize"><svg class="maximize-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx=".5"/></svg><svg class="restore-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 5.5v-2h7v7h-2"/><rect x="3.5" y="5.5" width="7" height="7" rx=".5"/></svg></button>
+      <button id="close" aria-label="Close" title="Close"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
     </div>
   </header>
   <main id="main">
@@ -43,8 +43,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <div class="quality-field"><label for="quality">Quality</label><select id="quality"><option value="">Best available</option></select></div>
         </div>
         <button id="destination" class="destination" title="Choose download folder">${folderIcon}<span><span class="destination-label">Save to</span><span id="folder"></span></span><span class="change-folder">Change</span></button>
-        <div class="download-actions"><button id="download" class="primary">Download<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3v9m-3-3 3 3 3-3M4 13v3h12v-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button><button id="cancel" class="secondary" hidden>Cancel</button></div>
-        <div id="progress-area" class="progress-area" hidden><div class="progress-copy"><span id="phase">Downloading</span><span id="transfer"></span></div><div id="progress" class="progress" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><div id="progress-fill"></div></div></div>
+        <div class="download-actions"><button id="download" class="primary">Download<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3v9m-3-3 3 3 3-3M4 13v3h12v-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+        <div id="progress-area" class="progress-area" hidden><div class="progress-header"><div class="progress-copy"><span id="phase">Downloading</span><span id="transfer"></span></div><button id="cancel" hidden>Cancel</button></div><div id="progress" class="progress" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><div id="progress-fill"></div></div></div>
         <p id="audio-hint" class="audio-hint" hidden>Converted from the source. Quality cannot exceed the original.</p>
       </section>
       <div id="message" class="message" role="status" aria-live="polite" hidden><span id="message-text"></span><button id="open-folder" hidden>Open folder</button><button id="retry" hidden>Try again</button><button id="copy-error" hidden title="Copy technical details">Copy details</button><button id="engine-install" hidden>Update engine</button><button id="engine-rollback" hidden>Restore previous</button></div>
@@ -265,10 +265,15 @@ if (isTauri()) {
     if (request) await invoke("cancel_job", { kind: "metadata", requestId: request }).catch(() => {});
     await window.close();
   });
-  document.querySelector<HTMLElement>(".titlebar")!.addEventListener("pointerdown", event => {
-    if (event.button !== 0 || (event.target as HTMLElement).closest("button")) return;
-    void window.startDragging();
-  });
+  async function updateMaximizeButton() {
+    const maximized = await window.isMaximized();
+    const button = element<HTMLButtonElement>("maximize");
+    button.dataset.maximized = String(maximized);
+    button.setAttribute("aria-label", maximized ? "Restore" : "Maximize");
+    button.title = maximized ? "Restore" : "Maximize";
+  }
+  await window.onResized(updateMaximizeButton);
+  await updateMaximizeButton();
   await listen<Progress>("download-progress", ({ payload }) => {
     if (payload.requestId !== activeDownload || stopped) return;
     const processing = payload.phase === "processing";

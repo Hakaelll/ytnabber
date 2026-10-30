@@ -2,6 +2,21 @@
 
 Verified on 29 October 2026 in the project's Windows x64 development environment.
 
+## Titlebar redesign checks
+
+The transparent 36px titlebar and smoked-glass source/download controls were checked separately after the original release verification below:
+
+- `npm test`: 5 passed after integrating the latest remote changes.
+- `cargo test --manifest-path src-tauri/Cargo.toml`: 14 passed, 9 opt-in engine/network tests ignored after integration.
+- `npm run build`: TypeScript and production assets passed.
+- `npm run desktop:build`: the optimized Windows executable and x64 NSIS installer were rebuilt successfully. The executable was checked to contain the current production JavaScript and CSS asset paths. Installer output: `src-tauri/target/release/bundle/nsis/ytnabber_0.1.0_x64-setup.exe` (104.17 MiB).
+- `tests/titlebar.browser.mjs`: passed in headless Edge at device scales 1, 1.5 and 2. It checks a continuous animated character field behind the transparent titlebar, no divider, aligned logo/control centers, hover and pressed states, minimize/maximize/close IPC, maximize/restore icon and accessible label synchronization on resize, keyboard activation/focus, the unboxed source arrow, metadata, download progress at 0%, 43.7% and 100%, processing, cancellation, success, error recovery, compact layout, reduced motion, increased contrast and forced colors. Tauri IPC and events are mocked; this is not a native Windows interaction test. Current idle and transfer screenshots are `screenshot.png` and `download-progress.png`.
+- Before integrating the remote engine/format additions, the existing complete UI check passed for animation, metadata, formats, destination, progress, processing, cancellation, success and compact layout. The titlebar check and frontend/native suites above were repeated after integration.
+
+To repeat the titlebar check, start `npm run dev`, make an existing Playwright installation resolvable (or set `PLAYWRIGHT_MODULE` to its module path), then run `node tests/titlebar.browser.mjs`. Microsoft Edge must be installed. The check saves screenshots under the ignored `artifacts/` directory; it adds no application dependency.
+
+Native drag, double-click, edge resizing, physical multi-monitor DPI changes and Windows snapping were not interactively verified for this change: the user requested no Computer Use. The existing Tauri window configuration is unchanged, and drag/double-click handling uses the framework's documented mechanism. The locally installed app does not reload source changes automatically; use the rebuilt executable or installer to see this revision. No GitHub release was published.
+
 ## Results
 
 | Check | Evidence |
