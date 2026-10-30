@@ -11,44 +11,42 @@ interface Media {
 }
 interface Startup { folder: string; enginesReady: boolean; engineError: string | null }
 interface Progress { requestId: number; phase: string; percent: number | null; speed: number | null; downloaded: number | null; total: number | null }
-interface EngineStatus { current: string; latest: string; available: boolean; canRollback: boolean }
 
-const linkIcon = '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m8 12 4-4M7 13l-1 1a3.5 3.5 0 0 1-5-5l4-4a3.5 3.5 0 0 1 5 0m0 2 1-1a3.5 3.5 0 0 1 5 5l-4 4a3.5 3.5 0 0 1-5 0" transform="translate(1 0)" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 const folderIcon = '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M2.5 6.5V4.7c0-.7.5-1.2 1.2-1.2H8l1.7 2h6.6c.7 0 1.2.5 1.2 1.2v8.6c0 .7-.5 1.2-1.2 1.2H3.7c-.7 0-1.2-.5-1.2-1.2V6.5Z" stroke="currentColor" stroke-width="1.2"/></svg>';
 
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <canvas id="field" aria-hidden="true"></canvas>
   <header class="titlebar" data-tauri-drag-region>
-    <div class="brand" data-tauri-drag-region><img src="/logo.png" alt="" width="14" height="14" draggable="false"><span>YTNabber</span></div>
     <div class="window-actions">
-      <button id="engine-check" aria-label="Check download engine updates" title="Check download engine updates"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12 5a5 5 0 1 0 1 5M12 2v4H8"/></svg></button>
       <button id="minimize" aria-label="Minimize" title="Minimize"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
       <button id="maximize" aria-label="Maximize" title="Maximize"><svg class="maximize-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx=".5"/></svg><svg class="restore-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 5.5v-2h7v7h-2"/><rect x="3.5" y="5.5" width="7" height="7" rx=".5"/></svg></button>
       <button id="close" aria-label="Close" title="Close"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
     </div>
   </header>
   <main id="main">
-    <div class="identity"><canvas id="emblem" role="img" aria-label="Original sun emblem, rendered as a slowly rotating point sculpture"></canvas></div>
+    <div class="composition">
+    <button id="emblem-button" class="identity" type="button" aria-label="Sun emblem"><canvas id="emblem" aria-hidden="true"></canvas></button>
     <section class="workspace" aria-label="Video download">
       <form id="source-form" class="source-form" autocomplete="off">
         <label class="sr-only" for="url">Video URL</label>
-        <div class="url-control">${linkIcon}<input id="url" type="url" placeholder="Paste a video link" spellcheck="false" autocomplete="off" required aria-describedby="source-hint"><button id="load" type="submit" aria-label="Load video" title="Load video"><svg viewBox="0 0 20 20" fill="none"><path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="loading-orbit" aria-hidden="true"></span></button></div>
-        <div id="source-hint" class="source-hint"><span id="loading" hidden><span class="loading-signal" aria-hidden="true"><i></i><i></i><i></i></span>Getting video info</span></div>
+        <div class="url-control glass glass-control"><span class="source-emblem" aria-hidden="true"></span><input id="url" type="url" placeholder="Paste a video link" spellcheck="false" autocomplete="off" required><button id="load" type="submit" aria-label="Load video" title="Load video"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
       </form>
-      <section id="details" class="details" aria-label="Selected video" inert>
-        <div class="preview"><img id="thumbnail" alt="" referrerpolicy="no-referrer"><div class="preview-fallback" id="preview-fallback">Preview unavailable</div><span id="duration" class="duration"></span></div>
+      <span id="source-status" class="sr-only" role="status" aria-live="polite"></span>
+      <section id="details" class="details" aria-label="Selected video" aria-hidden="true" inert><div class="details-content">
+        <div class="preview"><img id="thumbnail" alt="" referrerpolicy="no-referrer"><div class="preview-fallback" id="preview-fallback">Preview unavailable</div><span id="duration" class="duration glass glass-floating"></span></div>
         <div class="video-heading"><h1 id="video-title"></h1><p id="uploader"></p></div>
         <div class="options">
-          <fieldset class="format-field"><legend>Format</legend><div class="format-options"><button type="button" data-format="mp4" aria-pressed="true">MP4</button><button type="button" data-format="mp3" aria-pressed="false">MP3</button><button type="button" data-format="m4a" aria-pressed="false">M4A</button><button type="button" data-format="opus" aria-pressed="false">Opus</button></div></fieldset>
-          <div class="quality-field"><label for="quality">Quality</label><select id="quality"><option value="">Best available</option></select></div>
+          <fieldset class="format-field"><legend>Format</legend><div class="format-options glass glass-control"><button type="button" data-format="mp4" aria-pressed="true">MP4</button><button type="button" data-format="mp3" aria-pressed="false">MP3</button><button type="button" data-format="m4a" aria-pressed="false">M4A</button><button type="button" data-format="opus" aria-pressed="false">Opus</button></div></fieldset>
+          <div class="quality-field"><label for="quality">Quality</label><select id="quality" class="glass glass-control"><option value="">Best available</option></select></div>
         </div>
-        <button id="destination" class="destination" title="Choose download folder">${folderIcon}<span><span class="destination-label">Save to</span><span id="folder"></span></span><span class="change-folder">Change</span></button>
-        <div class="download-actions"><button id="download" class="primary">Download<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3v9m-3-3 3 3 3-3M4 13v3h12v-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
-        <div id="progress-area" class="progress-area" hidden><div class="progress-header"><div class="progress-copy"><span id="phase">Downloading</span><span id="transfer"></span></div><button id="cancel" hidden>Cancel</button></div><div id="progress" class="progress" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><div id="progress-fill"></div></div></div>
-        <p id="audio-hint" class="audio-hint" hidden>Converted from the source. Quality cannot exceed the original.</p>
-      </section>
-      <div id="message" class="message" role="status" aria-live="polite" hidden><span id="message-text"></span><button id="open-folder" hidden>Open folder</button><button id="retry" hidden>Try again</button><button id="copy-error" hidden title="Copy technical details">Copy details</button><button id="engine-install" hidden>Update engine</button><button id="engine-rollback" hidden>Restore previous</button></div>
+        <button id="destination" class="destination glass glass-surface" title="Choose download folder">${folderIcon}<span><span class="destination-label">Save to</span><span id="folder"></span></span><span class="change-folder">Change</span></button>
+        <div class="download-actions"><button id="download" class="primary glass glass-primary">Download<svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3v9m-3-3 3 3 3-3M4 13v3h12v-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+        <div id="progress-area" class="progress-area glass glass-surface" hidden><div class="progress-header"><div class="progress-copy"><span id="phase" role="status">Downloading</span><span id="transfer"></span></div><span id="percent"></span><button id="cancel" hidden>Cancel</button></div><div id="progress" class="progress" role="progressbar" aria-label="Download progress" aria-valuemin="0" aria-valuemax="100"><div id="progress-fill"></div></div></div>
+        <div class="audio-note"><p id="audio-hint" class="audio-hint" aria-hidden="true">Converted from the source. Quality cannot exceed the original.</p></div>
+      </div></section>
+      <div id="message" class="message" role="status" aria-live="polite" hidden><span id="message-text"></span><button id="open-folder" hidden>Open folder</button><button id="retry" hidden>Try again</button><button id="copy-error" hidden title="Copy technical details">Copy details</button></div>
     </section>
+    </div>
   </main>
 
 `;
@@ -76,9 +74,17 @@ let inspectingUrl = "";
 let stopped = false;
 
 startGraphics(element<HTMLCanvasElement>("field"), element<HTMLCanvasElement>("emblem"));
+let emblemPresses = 0;
+element("emblem-button").addEventListener("click", () => {
+  if (++emblemPresses === 10) {
+    document.documentElement.classList.toggle("chromatic");
+    emblemPresses = 0;
+  }
+});
 
 function fitQualityMenu() {
-  quality.style.setProperty("--quality-space", Math.max(54, window.innerHeight - quality.getBoundingClientRect().bottom - 14) + "px");
+  const rect = quality.getBoundingClientRect();
+  quality.style.setProperty("--quality-space", Math.max(54, Math.max(window.innerHeight - rect.bottom, rect.top - 36) - 14) + "px");
 }
 quality.addEventListener("pointerdown", fitQualityMenu);
 quality.addEventListener("keydown", fitQualityMenu);
@@ -94,8 +100,6 @@ function message(text: string, kind = "info", retry = false) {
   element("retry").hidden = !retry;
   element("copy-error").hidden = true;
   element("copy-error").textContent = "Copy details";
-  element("engine-install").hidden = true;
-  element("engine-rollback").hidden = true;
   element("message-text").title = "";
   if (text) requestAnimationFrame(() => element("message").scrollIntoView({
     block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
@@ -115,8 +119,8 @@ element("copy-error").addEventListener("click", async () => {
 function setLoading(value: boolean) {
   loading = value;
   element("source-form").classList.toggle("is-loading", value);
-  element("loading").hidden = !value;
-  load.classList.toggle("is-loading", value);
+  element("source-status").textContent = value ? "Loading video information." : "";
+  element("source-form").setAttribute("aria-busy", String(value));
   load.setAttribute("aria-busy", String(value));
   load.disabled = !ready || value || busy;
 }
@@ -124,7 +128,7 @@ function resetDetails() {
   media = null; lastLoaded = "";
   main.classList.remove("has-media");
   details.inert = true;
-  element("audio-hint").hidden = true;
+  details.setAttribute("aria-hidden", "true");
 }
 function options() {
   for (const button of formatButtons) {
@@ -137,14 +141,14 @@ function options() {
   if (format === "mp3") for (const bitrate of [128, 256, 320]) quality.add(new Option(bitrate + " kbps", String(bitrate)));
   quality.disabled = busy || !["mp4", "mp3"].includes(format);
   quality.title = format === "mp3" ? "Bitrate used for conversion. Existing MP3 audio keeps its original bitrate." : format === "mp4" ? "Compatible MP4 uses H.264/AAC. Original codecs preserves the best source tracks." : "Matching source audio is kept without another conversion.";
-  element("audio-hint").hidden = format === "mp4";
+  details.classList.toggle("is-audio", format !== "mp4");
+  element("audio-hint").setAttribute("aria-hidden", String(format === "mp4"));
 }
 function setBusy(value: boolean) {
   busy = value;
   input.disabled = value;
   load.disabled = value || !ready || loading;
   destination.disabled = value;
-  element<HTMLButtonElement>("engine-check").disabled = value;
   downloadButton.disabled = value || !media || !ready;
   downloadButton.hidden = value;
   cancelButton.hidden = !value;
@@ -153,23 +157,6 @@ function setBusy(value: boolean) {
   quality.disabled = value || !["mp4", "mp3"].includes(format);
   if (!value) { cancelButton.disabled = false; cancelButton.textContent = "Cancel"; }
 }
-async function updateEngine(mode: "check" | "install" | "rollback") {
-  if (busy || loading) return;
-  setBusy(true);
-  cancelButton.hidden = true;
-  element("progress-area").hidden = true;
-  message(mode === "check" ? "Checking engine version…" : mode === "install" ? "Updating download engine…" : "Restoring previous engine…");
-  try {
-    const status = await invoke<EngineStatus>("engine_update", { mode });
-    message(`Download engine ${status.current}.${status.available ? ` Version ${status.latest} is available.` : ""}`);
-    element("engine-install").hidden = !status.available;
-    element("engine-rollback").hidden = !status.canRollback;
-  } catch (error) { showError(error); }
-  finally { setBusy(false); }
-}
-element("engine-check").addEventListener("click", () => void updateEngine("check"));
-element("engine-install").addEventListener("click", () => void updateEngine("install"));
-element("engine-rollback").addEventListener("click", () => void updateEngine("rollback"));
 async function inspect(force = false) {
   clearTimeout(debounce);
   if (!ready || busy) return;
@@ -193,12 +180,17 @@ async function inspect(force = false) {
     const thumbnail = element<HTMLImageElement>("thumbnail");
     thumbnail.hidden = true;
     element("preview-fallback").hidden = false;
-    thumbnail.onload = () => { thumbnail.hidden = false; element("preview-fallback").hidden = true; };
+    element("thumbnail").parentElement!.style.removeProperty("--preview-ratio");
+    thumbnail.onload = () => {
+      thumbnail.parentElement!.style.setProperty("--preview-ratio", String(thumbnail.naturalWidth / thumbnail.naturalHeight));
+      thumbnail.hidden = false; element("preview-fallback").hidden = true;
+    };
     thumbnail.onerror = () => { thumbnail.hidden = true; element("preview-fallback").hidden = false; };
     if (result.thumbnail) thumbnail.src = result.thumbnail; else thumbnail.removeAttribute("src");
     format = result.hasVideo ? "mp4" : "m4a";
     options(); setBusy(false);
     main.classList.add("has-media"); details.inert = false;
+    details.setAttribute("aria-hidden", "false");
   } catch (error) {
     if (thisGeneration === generation && !isCancelled(error)) showError(error, true);
   } finally {
@@ -214,8 +206,15 @@ input.addEventListener("input", () => {
   if (ready) message("");
   if (validWebUrl(input.value.trim())) debounce = setTimeout(() => void inspect(), 500);
 });
+let qualityAnimation: Animation | undefined;
 for (const button of formatButtons) button.addEventListener("click", () => {
+  if (button.dataset.format === format) return;
+  qualityAnimation?.cancel();
   format = button.dataset.format as OutputFormat; options();
+  if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const opacity = Number(getComputedStyle(quality).opacity);
+    qualityAnimation = quality.animate([{ opacity: opacity * 0.6 }, { opacity }], { duration: 160, easing: "ease-out" });
+  }
 });
 destination.addEventListener("click", async () => {
   destination.disabled = true;
@@ -235,6 +234,9 @@ downloadButton.addEventListener("click", async () => {
   message(""); setBusy(true);
   element("phase").textContent = "Starting download";
   element("transfer").textContent = "";
+  element("percent").textContent = "";
+  element("progress-area").classList.remove("is-processing");
+  element("progress").hidden = false;
   element("progress").removeAttribute("aria-valuenow");
   element("progress").classList.add("indeterminate");
   element("progress-fill").style.width = "0%";
@@ -277,10 +279,13 @@ if (isTauri()) {
   await listen<Progress>("download-progress", ({ payload }) => {
     if (payload.requestId !== activeDownload || stopped) return;
     const processing = payload.phase === "processing";
-    element("phase").textContent = processing ? "Processing media" : payload.percent == null ? "Downloading" : "Downloading · " + payload.percent.toFixed(1) + "%";
+    element("phase").textContent = processing ? "Processing media" : "Downloading";
+    element("percent").textContent = !processing && payload.percent != null ? payload.percent.toFixed(1) + "%" : "";
+    element("progress-area").classList.toggle("is-processing", processing);
     element("transfer").textContent = !processing && payload.speed ? bytesLabel(payload.speed) + "/s" : "";
     const progress = element("progress");
-    progress.classList.toggle("indeterminate", processing || payload.percent == null);
+    progress.classList.toggle("indeterminate", !processing && payload.percent == null);
+    progress.hidden = processing;
     if (!processing && payload.percent != null) {
       progress.setAttribute("aria-valuenow", String(payload.percent));
       element("progress-fill").style.width = payload.percent + "%";

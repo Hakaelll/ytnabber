@@ -11,19 +11,25 @@ There are no accounts, queues, history, playlists, telemetry, database or backgr
 
 ## Visual decisions
 
-The Graphite reference supplies the monochrome palette and compact Windows system typography. The URL field, Download button and active transfer share a restrained smoked-glass material. The selected format stays off-white, and the quality picker stays dark.
+The current direction is **Monochromatic Optical Glass**. Flat translucent smoke fills, localized one-pixel reflections, internal shadows and contact shadows define the controls. There are no broad fill gradients, colored glows or added UI libraries. Four material variants distinguish primary actions, controls, secondary surfaces and floating content. The URL arrow is unboxed. The original sun artwork replaces the URL chain icon as a small CSS alpha mask.
 
-At 560 × 680, the title bar is 36px. It has no separate fill or divider: the existing character field continues behind the compact logo, wordmark and window controls. Thin geometric icons have a subtle smoked-glass surface only on hover or press, with an inset keyboard focus indicator. High contrast and reduced transparency restore a solid surface. The source field is 50px tall with a single delicate border and an unboxed arrow; overlapping bright fill/rim gradients were removed. During transfer, progress, speed and cancellation occupy one compact glass surface in place of the Download button. A centered 164px point emblem becomes a 58px emblem when metadata arrives. The source thumbnail is letterboxed without cropping its aspect ratio. The title, formats, actual video heights, destination and one Download action remain in the same scrollable window.
+The transparent 36px titlebar contains only minimize, maximize/restore and close. The existing Tauri drag region and native window handlers remain. There is no corner brand or engine-update UI. Windows' native hover Snap Layouts flyout remains outside the custom titlebar's existing capabilities.
 
-The title bar uses [Tauri's custom titlebar mechanism](https://v2.tauri.app/learn/window-customization/): `data-tauri-drag-region` handles dragging and double-click maximization, with `app-region: drag` for Windows touch and pen support. Controls opt out of the drag region. Resize events synchronize the maximize/restore icon and accessible label, including changes initiated outside the button. Resizability, window constraints and close-time job cancellation remain in the existing native configuration and handlers. The custom maximize button does not implement Windows 11's native hover Snap Layouts flyout; window snapping remains delegated to Windows and Tauri.
+Metadata loading has only a one-pixel traveling reflection within the input's lower edge. A clipped live region announces the operation without visible copy or a spinner. Download transfers show real percentages in a compact surface with a two-pixel inner rail. Post-processing has its own status without a percentage or a transfer rail. Completion removes the progress surface.
 
-The native customizable select preserves browser keyboard and accessibility behavior. Its picker is anchored below the trigger with no upward fallback and an available-height limit. Older runtimes receive explicit dark option colors. Errors and completion are inline messages; real download progress uses a simple two-pixel line. Metadata fetching has a restrained orbital indicator and moving input-edge reflection. Removed explanatory footer copy stays absent.
+Thumbnails use their natural aspect ratio and retain their complete image. A 16:9 fallback is used before the image arrives. Portrait previews have a bounded viewport-relative height without letterboxing or cropping. The centered composition grows from 448–480px in compact windows to 560–600px in medium windows and 740px in large windows. Short windows use tighter spacing; the main pane scrolls when needed. Metadata results expand and fade in, and collapse/fade out when the URL is cleared. Reversible grid transitions coordinate the emblem and source position over 280ms. Format selection uses a 200ms sliding optical inset, 160ms quality feedback and a reversible audio-hint expansion. Reduced motion removes these transitions.
 
-The emblem rotates to the right with physical thickness and depth lighting; the original artwork is not mirrored or replaced. The denser background has warped typographic sheets, currents, voids and blue-gray wave deformation. It never reacts to the mouse.
+Ten activations of the central emblem toggle a hidden chromatic mode; ten more return to monochrome. A registered CSS angle cycles continuously through the color wheel over 80 seconds. Canvas color treatment and restrained control accents cycle smoothly. The URL sun remains white and unfiltered at the user's request. Thumbnails remain unchanged. Reduced motion freezes the color cycle and removes transition motion. No state is persisted.
 
 ## Rendering
 
-Both canvases use batched pixel buffers. Glyph coverage and color combinations are prepared once. The emblem uses bilinear coverage for smooth compact projection. The slow field updates independently at a lower cadence; the animation loop is capped at 25 FPS. Internal resolution and glyph count are bounded. Hidden-document and reduced-motion signals stop the animation. Reduced transparency and high contrast produce solid control surfaces.
+The character field retains the original folded sheets, currents, voids and waves. Slow changes in sheet orientation, fold width and crossing-current phase add variety without altering glyph size or density; GPU and Canvas paths use the same equations. The old 1000px bitmap cap caused enlarged glyphs at large window sizes. Positions and glyph sizes now remain in CSS pixels, while the backing store follows physical dimensions with DPR capped at 2. Larger windows reveal more of the field instead of magnifying it.
+
+A small WebGL 2 point renderer computes field geometry in a vertex shader and samples a glyph atlas in one draw call. Positions and atlas data upload only on resize. The pixel-buffer Canvas implementation remains as a fallback, with DPR capped at 1.25 on that slower path. Context restoration recreates GPU resources. The emblem continues to use the original point map, physical depth and subpixel coverage in its own 360px Canvas buffer. The emblem rotates continuously to the right around Y, with a gentle pitch sway, following the user's updated motion request. It sits 28px higher in the initial screen and retains titlebar clearance in the loaded state.
+
+The loop is capped at 30 FPS; field cadence adapts between 12 and 24 FPS. Document visibility and reduced-motion signals stop animation. Color mode uses CSS compositing only when explicitly activated. No external dependency or extra WebGL context for controls is added.
+
+See [the visual verification report](OPTICAL-GLASS.md) for evidence and limits. Earlier release verification documents describe their respective historical builds.
 
 ## Engine strategy
 
@@ -39,4 +45,4 @@ Each subprocess belongs to a Windows Job Object with kill-on-close behavior, so 
 
 ## Validation
 
-See VERIFICATION.md for passing checks, measured resource usage, YouTube verification results and source-availability limits.
+See OPTICAL-GLASS.md for current interface checks. VERIFICATION.md and UPDATE-0.1.1.md contain historical release and engine evidence.
