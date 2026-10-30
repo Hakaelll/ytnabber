@@ -1,12 +1,20 @@
 use crate::model::Format;
 use serde_json::Value;
 
+fn compatible_h264(stream: &Value) -> bool {
+    stream["codec_name"] == "h264"
+        && matches!(stream["pix_fmt"].as_str(), Some("yuv420p" | "yuvj420p"))
+}
+fn video_track(stream: &Value) -> bool {
+    stream["codec_type"] == "video" && stream["disposition"]["attached_pic"] != 1
+}
+
 pub fn validate(info: &Value, format: Format) -> Result<(), String> {
     let streams = info["streams"]
         .as_array()
         .ok_or("FFprobe found no streams.")?;
     let audio = streams.iter().find(|s| s["codec_type"] == "audio");
-    let video = streams.iter().find(|s| s["codec_type"] == "video");
+    let video = streams.iter().find(|s| video_track(s));
     let container = info["format"]["format_name"].as_str().unwrap_or_default();
     let number = |name: &str| {
         info["format"][name]
@@ -14,7 +22,11 @@ pub fn validate(info: &Value, format: Format) -> Result<(), String> {
             .and_then(|s| s.parse::<f64>().ok())
             .unwrap_or(0.0)
     };
-    if number("duration") <= 0.0 || !number("duration").is_finite() || number("size") <= 0.0 {
+    if number("duration") <= 0.0
+        || !number("duration").is_finite()
+        || number("size") <= 0.0
+        || !number("size").is_finite()
+    {
         return Err("FFprobe found an empty file or invalid duration.".into());
     }
     let codec = audio
@@ -26,7 +38,7 @@ pub fn validate(info: &Value, format: Format) -> Result<(), String> {
             codec == "aac" && container.split(',').any(|c| c == "m4a") && video.is_none()
         }
         Format::Mp4 => {
-            video.is_some_and(|v| v["codec_name"] == "h264")
+            video.is_some_and(compatible_h264)
                 && (audio.is_none() || codec == "aac")
                 && container.split(',').any(|c| c == "mp4")
         }
@@ -79,7 +91,7 @@ pub async fn prepare(
         .ok_or("FFprobe found no streams.")?;
     let video = streams
         .iter()
-        .find(|s| s["codec_type"] == "video")
+        .find(|s| video_track(s))
         .ok_or("The downloaded file has no video.")?;
     let audio = streams.iter().find(|s| s["codec_type"] == "audio");
     let output = file.with_file_name(format!(
@@ -104,20 +116,20 @@ pub async fn prepare(
         .map(str::to_owned)
         .collect();
     args.push(file.to_string_lossy().into_owned());
-    args.extend(
-        ["-map", "0:v:0", "-map", "0:a:0?", "-c:v"]
-            .into_iter()
-            .map(str::to_owned),
-    );
+    let video_index = video["index"]
+        .as_u64()
+        .ok_or("FFprobe returned an invalid video stream index.")?;
+    args.extend(["-map".into(), format!("0:{video_index}")]);
+    args.extend(["-map", "0:a:0?", "-c:v"].into_iter().map(str::to_owned));
     args.push(
-        if video["codec_name"] == "h264" {
+        if compatible_h264(video) {
             "copy"
         } else {
             "libopenh264"
         }
         .into(),
     );
-    if video["codec_name"] != "h264" {
+    if !compatible_h264(video) {
         // Keep source dimensions; use a generous bitrate only when video conversion is unavoidable.
         args.extend(
             ["-b:v", "12M", "-pix_fmt", "yuv420p"]
@@ -155,7 +167,7 @@ mod tests {
     fn fixture(container: &str, audio: &str, video: Option<&str>) -> Value {
         let mut streams = vec![json!({"codec_type":"audio", "codec_name":audio})];
         if let Some(codec) = video {
-            streams.push(json!({"codec_type":"video", "codec_name":codec}));
+            streams.push(json!({"codec_type":"video", "codec_name":codec,"pix_fmt":"yuv420p"}));
         }
         json!({"streams":streams,"format":{"format_name":container,"duration":"10.0","size":"1000"}})
     }
@@ -179,8 +191,23 @@ mod tests {
             Format::Mp4
         )
         .is_ok());
-        let mut empty = fixture("mp3", "mp3", None);
-        empty["format"]["duration"] = json!("NaN");
-        assert!(validate(&empty, Format::Mp3).is_err());
+        for field in ["duration", "size"] {
+            let mut empty = fixture("mp3", "mp3", None);
+            empty["format"][field] = json!("NaN");
+            assert!(validate(&empty, Format::Mp3).is_err());
+        }
+    }
+    #[test]
+    fn compatible_mp4_rejects_ten_bit_h264() {
+        let mut info = fixture("mov,mp4,m4a,3gp,3g2,mj2", "aac", Some("h264"));
+        info["streams"][1]["pix_fmt"] = json!("yuv420p10le");
+        assert!(validate(&info, Format::Mp4).is_err());
+        assert!(validate(&info, Format::Source).is_ok());
+    }
+    #[test]
+    fn audio_cover_art_is_not_a_video_track() {
+        let mut info = fixture("mp3", "mp3", Some("mjpeg"));
+        info["streams"][1]["disposition"] = json!({"attached_pic":1});
+        assert!(validate(&info, Format::Mp3).is_ok());
     }
 }

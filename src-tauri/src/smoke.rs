@@ -187,6 +187,41 @@ async fn real_engines_offline_codec_conversion() {
             file.metadata().unwrap().len()
         );
     }
+    let cover = folder.join("audio with cover.mp3");
+    let mut args: Vec<String> = ["-v", "error", "-nostdin", "-n", "-i"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    args.push(source.to_string_lossy().into_owned());
+    args.extend(
+        [
+            "-map",
+            "0:a:0",
+            "-map",
+            "0:v:0",
+            "-c:a",
+            "libmp3lame",
+            "-c:v",
+            "mjpeg",
+            "-frames:v",
+            "1",
+            "-disposition:v:0",
+            "attached_pic",
+        ]
+        .into_iter()
+        .map(str::to_owned),
+    );
+    args.push(cover.to_string_lossy().into_owned());
+    engine::tool(&root, "ffmpeg.exe", args, cancel.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        crate::media::prepare(&root, &cover, Format::Mp3, cancel)
+            .await
+            .unwrap(),
+        cover
+    );
+    println!("Verified MP3 cover art is preserved without another transcode");
     fs::remove_dir_all(folder).unwrap();
 }
 
@@ -262,6 +297,76 @@ async fn real_engines_720p_and_1080p_compatible_profiles() {
             .iter()
             .any(|s| s["height"] == height));
         println!("Verified {height}p H.264/AAC with exact format selection and no extra transcode");
+    }
+    fs::remove_dir_all(folder).unwrap();
+}
+
+#[tokio::test]
+#[ignore = "Downloads two short public Big Buck Bunny samples; requires Internet and bundled engines"]
+async fn real_engines_public_hd_samples() {
+    let root = engines();
+    let folder = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../.cache")
+        .join(format!(
+            "public-hd-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+    fs::create_dir_all(&folder).unwrap();
+    let (_sender, cancel) = watch::channel(false);
+    // Two seconds of Blender Foundation's open movie keep traffic and fixture storage small.
+    let url = "https://www.youtube.com/watch?v=aqz-KE-bpKQ";
+    for height in [720, 1080] {
+        let staging = folder.join(height.to_string());
+        fs::create_dir(&staging).unwrap();
+        let mut args = engine::download_args(&root, Format::Mp4, Some(height), &staging, url);
+        let before_url = args.len() - 2;
+        args.splice(
+            before_url..before_url,
+            [
+                "--download-sections",
+                "*0-2",
+                "--retries",
+                "0",
+                "--extractor-retries",
+                "0",
+                "--fragment-retries",
+                "0",
+            ]
+            .into_iter()
+            .map(str::to_owned),
+        );
+        let downloaded = engine::run(&root, args, cancel.clone(), height as u64, false, |_| {})
+            .await
+            .unwrap();
+        let file =
+            crate::media::prepare(&root, Path::new(&downloaded), Format::Mp4, cancel.clone())
+                .await
+                .unwrap();
+        let info = probe(&root, &file);
+        crate::media::validate(&info, Format::Mp4).unwrap();
+        assert!(info["streams"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["height"] == height));
+        let decode = vec![
+            "-v".into(),
+            "error".into(),
+            "-i".into(),
+            file.to_string_lossy().into_owned(),
+            "-f".into(),
+            "null".into(),
+            "-".into(),
+        ];
+        engine::tool(&root, "ffmpeg.exe", decode, cancel.clone())
+            .await
+            .unwrap();
+        println!(
+            "Verified public {height}p sample: H.264/AAC, downloaded, probed and fully decoded"
+        );
     }
     fs::remove_dir_all(folder).unwrap();
 }
@@ -479,8 +584,6 @@ async fn real_engines_youtube_metadata_and_separate_track_merge() {
     assert_eq!(media.title, "Me at the zoo");
     assert!(media.duration.is_some() && media.thumbnail.is_some());
     let height = *media.heights.last().unwrap();
-    let (_sender, receiver) = watch::channel(false);
-    let events = Arc::new(Mutex::new(Vec::<Progress>::new()));
     let mut download_args = engine::download_args(&root, Format::Mp4, Some(height), &folder, url);
     download_args.splice(0..0, ["--verbose".into(), "--no-cache-dir".into()]);
     let output = Command::new(root.join("yt-dlp.exe"))
@@ -518,7 +621,6 @@ async fn real_engines_youtube_metadata_and_separate_track_merge() {
         .iter()
         .any(|s| s["codec_type"] == "video" && s["height"].as_u64() == Some(height as u64)));
     assert!(streams.iter().any(|s| s["codec_type"] == "audio"));
-    drop((events, receiver));
     println!(
         "YouTube {}p: bundled Deno solved EJS; video + audio downloaded, merged and probed successfully.",
         height

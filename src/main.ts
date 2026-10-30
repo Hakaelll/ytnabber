@@ -136,6 +136,7 @@ function options() {
   if (format === "mp4") quality.add(new Option("Best · original codecs", "source"));
   if (format === "mp3") for (const bitrate of [128, 256, 320]) quality.add(new Option(bitrate + " kbps", String(bitrate)));
   quality.disabled = busy || !["mp4", "mp3"].includes(format);
+  quality.title = format === "mp3" ? "Bitrate used for conversion. Existing MP3 audio keeps its original bitrate." : format === "mp4" ? "Compatible MP4 uses H.264/AAC. Original codecs preserves the best source tracks." : "Matching source audio is kept without another conversion.";
   element("audio-hint").hidden = format === "mp4";
 }
 function setBusy(value: boolean) {

@@ -280,6 +280,11 @@ pub async fn run_process(
         }
     })?;
     if !status.success() {
+        if status.code() == Some(0xc0000135u32 as i32) {
+            return Err(format!(
+                "Could not start {tool_name}: required DLLs are missing. Repair the installation."
+            ));
+        }
         let error: String = if errors.is_empty() {
             "The download engine stopped unexpectedly. Try another public video URL.".into()
         } else {

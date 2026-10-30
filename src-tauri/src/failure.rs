@@ -148,7 +148,7 @@ impl Failure {
         };
         let retry_after = if code == "rate_limited" {
             let exposed = raw.lines().find_map(|line| {
-                let offset = line.to_lowercase().find("retry-after")?;
+                let offset = line.to_ascii_lowercase().find("retry-after")?;
                 let value = line[offset + "retry-after".len()..]
                     .trim_start_matches([':', ' ', '='])
                     .trim();
