@@ -1,0 +1,27 @@
+{
+  "name": "ytnabber-media",
+  "version-string": "0.1.1",
+  "builtin-baseline": "d4c0a46cb8f63e5c9fa007d13baf1cb3e43bf7e3",
+  "dependencies": [
+    {
+      "name": "ffmpeg",
+      "default-features": false,
+      "features": [
+        "avcodec",
+        "avdevice",
+        "avformat",
+        "avfilter",
+        "swscale",
+        "swresample",
+        "ffmpeg",
+        "ffprobe",
+        "mp3lame",
+        "opus",
+        "openh264",
+        "vpx",
+        "dav1d",
+        "zlib"
+      ]
+    }
+  ]
+}

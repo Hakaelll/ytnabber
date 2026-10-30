@@ -1,5 +1,174 @@
 # 0.1.1 engineering audit and release work
 
+## Final release result
+
+Windows x64 installer generated successfully. Application/package/Cargo/NSIS
+metadata is 0.1.1. Automated checks and actual engine downloads/conversions
+passed. Clean-machine installation and manual UI/player checks remain pending;
+this is not a claim of full Windows 10/11 certification.
+
+| Measured component | 0.1.0 MiB | 0.1.1 MiB | Change |
+| --- | ---: | ---: | ---: |
+| Downloadable NSIS installer | 103.89 | 64.05 | -38.35% |
+| Application payload | 278.98 | 154.47 | -44.63% |
+| All engine resources | 271.24 | 145.82 | -46.24% |
+| FFmpeg/FFprobe binaries and their DLLs | 155.21 | 29.67 | -80.89% |
+| Deno | 93.54 | 93.54 | unchanged |
+| yt-dlp | 22.48 | 22.48 | unchanged |
+| Native executable with embedded frontend | 7.46 | 8.36 | +12.04% |
+| Central licenses and notices | 0.28 | 0.30 | +6.72% |
+
+Installer reduction: **41,782,507 bytes (39.85 MiB)**. Application payload
+reduction: **130,555,670 bytes (124.51 MiB)**. The native executable grew
+0.90 MiB with the functional/update changes; the overall package still
+shrunk substantially. This is a reduction of real uncompressed engine code,
+not just a different installer compression setting.
+
+Raw byte inventories: [before](size-0.1.0.json), [after](size-0.1.1.json).
+`npm run size:release` reproduces the measurement. Payload means application
+files, verified against the extracted installer; it excludes the generated
+uninstaller, shortcuts/registry, shared WebView2, filesystem allocation and
+user data. An actual installed-directory measurement on a clean VM is pending.
+
+The largest remaining files are Deno (93.54 MiB), yt-dlp (22.48), avcodec
+(15.19), the native executable (8.36), avfilter (4.05), avformat (2.69),
+dav1d (1.90), swscale (1.21), avutil (1.10) and OpenH264 (0.92).
+The JSON inventory records the exact bytes for each, including every smaller
+DLL, license and configuration file. Graphic originals remain 1.13 MiB and
+are embedded in the frontend; they must not be added to the native size a
+second time. Fonts use Windows system fonts; animations are code/point data.
+
+### Why FFmpeg is smaller
+
+The stock BtbN build included numerous external GPU, filter, image and video
+encoding libraries that YTNabber never calls. The pinned compact LGPL 2.1+
+shared build retains native demuxers/decoders, H.264/AAC/MP3/Opus operations,
+AV1 through dav1d, VP8/VP9, HTTPS through Schannel, resampling/scaling and
+native device inputs including lavfi. It omits FFplay and the unexposed
+external library collection. FFmpeg and FFprobe still share their DLLs.
+No required core operation was replaced by an experimental implementation.
+Source hashes, patches, licenses and the repeatable recipe accompany the
+project; no compiler, test data, PDB or source cache ships to users.
+
+The first compact trial omitted avdevice/lavfi: two fixture-generation tests
+failed with `Unknown input format: lavfi`. It was corrected by adding the
+199,168-byte native device DLL, then the affected tests passed. This failure
+was not hidden or counted as a successful verification.
+
+### Final architecture
+
+The existing TypeScript interface calls asynchronous Rust commands through
+Tauri IPC. Rust selects the bundled or explicitly updated official yt-dlp
+executable. It always passes absolute paths to bundled Deno and FFmpeg;
+yt-dlp's official executable includes matching EJS scripts and Python.
+Deno is retained with upstream restricted EJS permissions, not replaced by
+an unrestricted smaller runtime. See [the runtime study](RUNTIMES.md).
+
+yt-dlp downloads/extracts/remuxes into owned staging. Rust probes the real
+result with FFprobe. For compatible MP4, only incompatible tracks are
+recoded; supported H.264 8-bit 4:2:0/AAC tracks are copied. Original codecs
+remain an explicit high-quality choice. A verified complete file is then
+published without replacing an existing file. Windows Job Objects cover
+yt-dlp/Deno/FFmpeg descendants and cancellation.
+
+| Choice | Actual final media policy |
+| --- | --- |
+| Compatible MP4 | H.264 8-bit 4:2:0, AAC if audio exists; retain resolution; convert only necessary tracks |
+| Original-codec MP4 | Preserve selected best source codecs; remux when needed; player support may vary |
+| MP3 | Real MP3 conversion, default 192 kbps target; configurable conversion bitrate; retain matching MP3 and cover art |
+| M4A | Prefer AAC, otherwise convert; reject mislabeled Opus |
+| Opus | Explicit choice, retain Opus or genuinely convert when necessary |
+
+### Verification performed
+
+| Check | Actual result |
+| --- | --- |
+| Native unit tests | 16 passed |
+| Frontend/build-inventory tests | 6 passed |
+| TypeScript, formatting, clippy including test targets | Passed; warnings denied |
+| Production frontend/native/NSIS build | Passed |
+| Final engine integration group | 7 passed, sequentially, with system tools removed from PATH and resources under a Unicode path containing spaces |
+| 720p/1080p local fixtures | Exact selection, H.264/AAC verified; compatible tracks not transcoded again |
+| Real public 720p/1080p downloads | Two-second Big Buck Bunny samples downloaded using engines extracted from the actual installer; both probed and fully decoded |
+| Real Deno/EJS | Bundled Deno recognized and actual EJS solving asserted during a complete public YouTube reference download; same pinned yt-dlp/Deno binaries as the final package |
+| MP3/M4A/Opus and VP9/Opus conversion | Real outputs, FFprobe and complete decoding passed; cached conversion reuse and MP3 cover art checked |
+| Cancellation | Active transfer and live FFmpeg conversion cancelled; files unlocked for cleanup |
+| Error cases | Missing tools, corrupt input, processing failure, HTTP 404, HTTP 429, format mismatch and file protection covered |
+| Rate limit | Local server observed exactly one request on 429; state tests enforce cooldown |
+| Updater | Official 2026.10.21 to 2026.10.26 update and rollback passed in isolation; original bundled fixture byte-identical |
+| Distribution integrity | All 35 application payload files checked against the extracted NSIS installer; engine checksums matched |
+| Native bundle marker | Tauri changes only `BUNDLE_TYPE_VAR_UNK` to `BUNDLE_TYPE_VAR_NSS` in the packaged executable; remaining bytes match the build output |
+| Visual identity sources | Git diff confirmed artwork, icons, CSS, graphics/animation code and emblem point data unchanged |
+
+The public HD source is Blender Foundation's
+[Big Buck Bunny reference](https://www.youtube.com/watch?v=aqz-KE-bpKQ).
+Only short samples were downloaded for the HD check, not the complete film.
+The short YouTube reference is `jNQXAC9IVRw`; direct-media checks use the
+public W3Schools `mov_bbb.mp4`. Tests do not use accounts, cookies or external
+PO-token providers and are run sequentially. The Windows compatible pixel
+format policy follows the [Media Foundation H.264 decoder constraints](https://learn.microsoft.com/en-us/windows/win32/medfound/h-264-video-decoder).
+
+### External runtime, auxiliary and temporary storage
+
+- WebView2 is shared, not bundled or duplicated by YTNabber. The current host's
+  installed WebView2 156.0.4314.50 directory measures 914,606,303 bytes
+  (872.24 MiB, 919 files). This is an existing system component, not part of
+  the 64.05 MiB installer or 154.47 MiB app payload. A clean Windows system
+  without WebView2 needs Microsoft's runtime, downloaded by the unchanged
+  bootstrapper strategy; its size/version can vary.
+- A controlled `yt-dlp --version` run with an isolated TEMP observed a peak
+  of 30,749,168 extracted bytes (29.32 MiB, 142 files). Exit code was zero
+  and no temporary files remained. This is a measured bootstrap sample,
+  not a peak for every download or video size.
+- Media staging can hold source and converted output concurrently. Success
+  and explicit cancellation clean it; failures retain recoverable files.
+  Exact media/temp usage depends on the selected content.
+- Explicit engine updates retain current/previous dated executables in
+  per-user data in addition to the bundled fallback. Files in use can defer
+  old-cache cleanup. This rollback storage is separate from the app payload.
+- Developer source/build/download caches are excluded from NSIS. Their
+  growth while compiling FFmpeg is not an installed-app size increase.
+
+### Installer and pending verification
+
+Artifact: `src-tauri/target/release/bundle/nsis/ytnabber_0.1.1_x64-setup.exe`.
+Exact size: **67,159,137 bytes**.
+
+SHA-256:
+`ea4bb6668b88fcf2808ec60c74f7d1f3d107e27fe75a2e46165cfde641385835`.
+
+NSIS remains per-user with the existing icon, template/configuration,
+shortcuts and uninstall behavior. Its generated file list contains only
+application resources, licenses and required installer plugins. No source,
+test fixture, Node modules, PDB or build cache is included. Resource extraction
+and DLL imports were checked; there is no new Visual C++ redistributable
+requirement beyond the Windows system runtime.
+
+Still pending:
+
+- Clean Windows 10 and Windows 11 installation with no manually installed
+  yt-dlp/Python/Deno/FFmpeg. Windows Sandbox, VirtualBox, VMware and Hyper-V
+  tooling were not available in this environment. PATH isolation passed but
+  is not a substitute for this test.
+- Actual installer installation, upgrade, shortcut behavior and uninstall
+  on that clean environment; the NSIS script/resources were inspected only.
+- Manual visual/animation and physical Windows player checks. Computer Use
+  was stopped at the user's instruction and no further UI automation was used.
+- The installer is unsigned. Source restrictions and future extractor/runtime
+  changes can still require an engine rollback or a later app/dependency update.
+  Candidate update validation checks integrity and startup/version, not every
+  source site's future compatibility.
+- In-session resume is supported; restart/crash recovery remains manual.
+  Server-specific Retry-After headers not exposed by yt-dlp's CLI cannot be
+  inferred; absent an exposed value the app uses a 60-second cooldown and
+  does not retry automatically.
+
+Standards/spec review was performed in the current agent against `82db38b`
+and the supplied update prompt. It caught the lavfi omission, 10-bit H.264
+compatibility and cover-art classification issues; each was corrected with
+focused checks. No framework migration, account integration, telemetry or
+visual redesign was introduced.
+
 ## Baseline (29 October 2026, before source changes)
 
 Source: clean Desktop checkout at `82db38b`, identical to origin/main;

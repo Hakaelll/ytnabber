@@ -25,13 +25,13 @@ Both canvases use batched pixel buffers. Glyph coverage and color combinations a
 
 ## Engine strategy
 
-Pinned Windows x64 executables are bundled at build time. SHA-256 values from the official upstream GitHub release assets are committed in scripts/engine-manifest.json. FFmpeg is BtbN's LGPL shared build, linked by ffmpeg.org. Shared DLLs reduce duplication between ffmpeg and ffprobe.
+Pinned Windows x64 engines are bundled at build time. Official yt-dlp and Deno archive hashes are committed in scripts/engine-manifest.json. FFmpeg uses verified official source and pinned Microsoft vcpkg recipes. Shared DLLs reduce duplication between FFmpeg and FFprobe.
 
-No updater, runtime component download, PATH dependency or administrator configuration is added. yt-dlp's official executable includes matching EJS scripts; its bundled Deno is selected explicitly. See THIRD_PARTY_NOTICES.md and licenses/SOURCES.md.
+In 0.1.1, yt-dlp also has an explicit stable-release updater with official HTTPS origin, SHA-256 checks, versioned per-user executables, an atomic active-version switch and rollback. Bundled Deno remains explicit and does not depend on PATH. FFmpeg 9.0.2 is built as compact shared DLLs using pinned vcpkg source recipes; no build tools ship. See UPDATE-0.1.1.md, THIRD_PARTY_NOTICES.md and licenses/SOURCES.md.
 
 Subprocesses receive structured arguments without a shell. User yt-dlp configuration and plugin discovery are disabled. URLs and selected qualities are checked in Rust. Output is explicitly UTF-8: Windows' default process-output encoding can omit characters such as the fullwidth separators in sanitized titles, producing a path that does not match the real file.
 
-Downloads use newly created staging directories inside the destination. Canonical output paths must remain inside that operation's staging folder. Windows moves publish a complete file without replacing an existing one, including on FAT/exFAT destinations. Cleanup is restricted to a directory successfully created by that operation.
+Downloads use owned staging directories inside the destination. Identical in-session retries can reuse a retained directory. Canonical output paths must remain inside that operation's staging folder. FFprobe gates publication on actual codecs, container, duration and size. Compatible MP4 converts only incompatible tracks, and Windows moves never replace an existing file, including on FAT/exFAT destinations. Cleanup is restricted to owned directories; failed operations retain recoverable inputs.
 
 Each subprocess belongs to a Windows Job Object with kill-on-close behavior, so cancellation and application exit also terminate FFmpeg/Deno descendants. Metadata requests are versioned; obsolete results cannot replace the current selection. Repeated submission of the same in-flight URL does not launch another query.
 

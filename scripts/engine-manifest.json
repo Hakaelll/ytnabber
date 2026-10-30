@@ -15,9 +15,8 @@
   },
   {
     "name": "ffmpeg",
-    "version": "N-128142-g28fda48e0b",
-    "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-28-19-47/ffmpeg-N-128142-g28fda48e0b-win64-lgpl-shared.zip",
-    "sha256": "cdc8388862f20bb0393141f944fe18b54e7a6de50fd42a24db58c63fb48c6a8c",
-    "filename": "ffmpeg-shared.zip"
+    "version": "9.0.2",
+    "build": "vcpkg",
+    "recipe": "scripts/ffmpeg/vcpkg.json"
   }
 ]

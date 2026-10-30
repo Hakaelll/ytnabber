@@ -64,8 +64,11 @@ explicitly says to download `deno`, not `denort`. Compiling a fixed JS program
 with Deno is not a drop-in CLI for arbitrary future EJS inputs. Downgrading
 to the minimum version just to save bytes would discard later fixes.
 
-Node is supported but still embeds V8 and a broad runtime; no second Node
-runtime is added. Bun is deprecated by yt-dlp. Relying on a user's system
+The official Node 22.23.4 `win-x64/node.exe` endpoint reported a Content-Length
+of 87,034,184 bytes (83.00 MiB). This is remote asset metadata, not a downloaded
+or EJS-tested binary in this study; its binary-only saving over Deno would be
+10.54 MiB. The pinned yt-dlp Node provider invokes Node's permission mode.
+No second Node runtime is added. Bun is deprecated by yt-dlp. Relying on a user's system
 runtime or downloading it after install would not make the package
 self-contained. UPX/installer compression alone does not reduce the amount
 of code mapped/extracted at runtime and is not the optimization sought here.
@@ -74,3 +77,8 @@ For growth, keep runtime/backend/frontend size budgets separate, retain the
 current Tauri architecture, and measure every release's file inventory. The
 next independent size target is the broad FFmpeg shared build (155.22 MiB),
 especially optional codec/filter/device libraries, not the 7.46 MiB app.
+
+The final 0.1.1 build keeps Deno and instead reduces the actual FFmpeg binary
+set from 155.21 to 29.67 MiB, while retaining the required operations. The
+installer measures 64.05 MiB. See UPDATE-0.1.1.md for the full before/after
+inventory, functional checks and remaining clean-machine/manual checks.

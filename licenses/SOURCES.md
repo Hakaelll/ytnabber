@@ -1,6 +1,6 @@
 # Corresponding source and build materials
 
-The executable downloads are pinned, unmodified upstream release assets. Their exact URLs and SHA-256 values are recorded in scripts/engine-manifest.json and the installed engines/versions.json.
+yt-dlp and Deno downloads are pinned, unmodified upstream release assets. Their exact URLs and SHA-256 values are recorded in scripts/engine-manifest.json and the installed engines/versions.json. FFmpeg is built from verified upstream sources as described below.
 
 ## yt-dlp 2026.10.26
 
@@ -13,14 +13,16 @@ The executable downloads are pinned, unmodified upstream release assets. Their e
 
 The upstream Windows binary is a GPLv3+ combined work; the source repository alone is Unlicense. Its notices identify the included components and their licenses.
 
-## FFmpeg N-128142-g28fda48e0b, BtbN autobuild-2026-10-28-19-47
+## FFmpeg 9.0.2, compact LGPL shared build
 
-- [Exact binary release and accompanying materials](https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-10-28-19-47)
-- [FFmpeg source at the binary's commit](https://github.com/FFmpeg/FFmpeg/tree/28fda48e0b)
-- [Build recipes, dependency source retrieval and patches](https://github.com/BtbN/FFmpeg-Builds)
-- [Upstream source retrieval instructions](https://github.com/BtbN/FFmpeg-Builds#sources)
+- [Exact FFmpeg source](https://github.com/FFmpeg/FFmpeg/tree/n9.0.2)
+- [Pinned vcpkg registry, source hashes and patches](https://github.com/microsoft/vcpkg/tree/d4c0a46cb8f63e5c9fa007d13baf1cb3e43bf7e3/ports)
+- [FFmpeg port and applied patches](https://github.com/microsoft/vcpkg/tree/d4c0a46cb8f63e5c9fa007d13baf1cb3e43bf7e3/ports/ffmpeg)
+- App build recipe: scripts/ffmpeg/vcpkg.json, scripts/ffmpeg/triplets/x64-ytnabber.cmake and scripts/build-ffmpeg.mjs in this release's source.
 
-The included LGPL shared build uses replaceable DLLs. Run engines/ffmpeg.exe -buildconf to inspect the exact build configuration. The BtbN archive includes its FFmpeg license, and that text is distributed alongside the engine. The source and build-material links are supplied next to the binary download information so recipients can retrieve them without charge.
+The LGPL 2.1+ shared build uses replaceable DLLs and the static Microsoft CRT. GPL/nonfree features, FFplay and external GPU/filter packages are not enabled; none are called by YTNabber's download or conversion profiles. Core decoders, containers, native device inputs including lavfi, HTTPS via Windows Schannel, MP3/AAC/Opus encoding and OpenH264 remain enabled. Run engines/ffmpeg.exe -buildconf to inspect the exact configuration. The installed engines/ffmpeg-build.json records the recipe, configuration and binary hashes; engines/checksums.json records every distributed engine resource.
+
+The pinned registry also contains the exact source URLs, cryptographic hashes and build patches for LAME, Opus, OpenH264, libvpx, dav1d and zlib. Their target-package copyright files are distributed in engines/licenses/. All source/build materials above are available without charge. Build tools and source caches are not part of the installed application.
 
 ## Deno 2.9.8
 
