@@ -2,8 +2,6 @@
 
 A compact Windows app for downloading one public video or saving its audio.
 
-<img src="docs/screenshot.png" alt="YTNabber video preview and download controls" width="420">
-
 ## Download
 
 Get the **Windows x64 installer** from [Releases](https://github.com/Hakaelll/ytnabber/releases/latest). Requires Windows 10/11 and Microsoft WebView2, which the installer can set up if missing. Installation is per user, without admin rights.
