@@ -16,11 +16,6 @@ yt-dlp, Deno and FFmpeg are included. No Python, terminal or manual tool setup i
 
 MP4 defaults to compatible H.264/AAC; original source codecs are also available. MP3 defaults to 192 kbps. Existing files are never overwritten, and the last destination is remembered. Failed downloads retain recoverable files; an identical retry in the same session can resume them.
 
-## Interface
-
-Dark optical-glass controls, a rotating sun emblem and a flowing field of tiny characters. The layout adapts to compact and maximized windows. Video previews keep their proportions; loading, download and processing have distinct feedback. Format changes and preview entry/exit transition smoothly.
-
-Animation pauses while hidden and respects reduced motion, transparency and contrast preferences. No accounts, history, queue or telemetry.
 
 ## Develop
 
