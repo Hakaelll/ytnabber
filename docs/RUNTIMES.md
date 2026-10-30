@@ -75,10 +75,10 @@ of code mapped/extracted at runtime and is not the optimization sought here.
 
 For growth, keep runtime/backend/frontend size budgets separate, retain the
 current Tauri architecture, and measure every release's file inventory. The
-next independent size target is the broad FFmpeg shared build (155.22 MiB),
+next independent size target was the broad FFmpeg shared build (155.21 MiB),
 especially optional codec/filter/device libraries, not the 7.46 MiB app.
 
 The final 0.1.1 build keeps Deno and instead reduces the actual FFmpeg binary
 set from 155.21 to 29.67 MiB, while retaining the required operations. The
-installer measures 64.05 MiB. See UPDATE-0.1.1.md for the full before/after
+installer measures 64.06 MiB. See UPDATE-0.1.1.md for the full before/after
 inventory, functional checks and remaining clean-machine/manual checks.

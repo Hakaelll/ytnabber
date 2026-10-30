@@ -1,10 +1,10 @@
 {
   "version": "0.1.1",
-  "installerBytes": 67159137,
-  "payloadBytes": 161976890,
-  "nativeBytes": 8761344,
+  "installerBytes": 67169936,
+  "payloadBytes": 161977966,
+  "nativeBytes": 8762368,
   "engineBytes": 152903506,
-  "licenseBytes": 312040,
+  "licenseBytes": 312092,
   "note": "Logical payload bytes; excludes uninstaller, shared WebView2, filesystem allocation and user data. This is not a clean-machine installed-size measurement.",
   "largest": [
     {
@@ -21,7 +21,7 @@
     },
     {
       "name": "ytnabber.exe",
-      "bytes": 8761344
+      "bytes": 8762368
     },
     {
       "name": "engines/avfilter-12.dll",
@@ -51,7 +51,7 @@
   "files": [
     {
       "name": "ytnabber.exe",
-      "bytes": 8761344
+      "bytes": 8762368
     },
     {
       "name": "engines/.gitkeep",
@@ -175,7 +175,7 @@
     },
     {
       "name": "licenses/SOURCES.md",
-      "bytes": 3058
+      "bytes": 3110
     },
     {
       "name": "licenses/yt-dlp-third-party.txt",

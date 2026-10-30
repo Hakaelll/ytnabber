@@ -540,6 +540,52 @@ async fn real_engines_download_convert_report_progress_and_cancel() {
         "Cancellation completed in {:.2}s",
         start.elapsed().as_secs_f64()
     );
+    let partial = staging
+        .read_dir()
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|file| file.extension().is_some_and(|ext| ext == "part"))
+        .expect("Interrupted transfer must leave resumable bytes in this fixture");
+    let completed = folder
+        .read_dir()
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|file| file.extension().is_some_and(|ext| ext == "mp4"))
+        .unwrap();
+    let original = fs::read(completed).unwrap();
+    // Small cancelled transfers can still be buffered; seed a persisted interruption fixture.
+    fs::write(partial, &original[..32768]).unwrap();
+    let resumed = Command::new(root.join("yt-dlp.exe"))
+        .arg("--no-quiet")
+        .args(engine::download_args(
+            &root,
+            Format::Mp4,
+            None,
+            &staging,
+            url,
+        ))
+        .output()
+        .unwrap();
+    let diagnostic = String::from_utf8_lossy(&resumed.stderr);
+    assert!(
+        resumed.status.success(),
+        "{}",
+        crate::failure::sanitize(&diagnostic)
+    );
+    let stdout = String::from_utf8(resumed.stdout).unwrap();
+    assert!(
+        stdout.contains("Resuming download at byte")
+            || diagnostic.contains("Resuming download at byte"),
+        "{}",
+        crate::failure::sanitize(&format!("{stdout}\n{diagnostic}"))
+    );
+    let resumed_file = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("__FILE__"))
+        .unwrap();
+    crate::media::validate(&probe(&root, Path::new(resumed_file)), Format::Mp4).unwrap();
+    assert_eq!(fs::read(resumed_file).unwrap(), original);
+    println!("Persisted interruption fixture resumed from 32 KiB and matched the complete media.");
     let (_sender, receiver) = watch::channel(false);
     let mut args = engine::base_args(&root);
     args.extend([

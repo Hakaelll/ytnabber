@@ -1,5 +1,9 @@
 # Release verification — 0.1.0
 
+For the current 0.1.1 installer, sizes, engine checks and pending clean-machine
+tests, see [UPDATE-0.1.1.md](UPDATE-0.1.1.md). The results below describe the
+earlier 0.1.0 and independent titlebar work, not fresh 0.1.1 UI certification.
+
 Verified on 29 October 2026 in the project's Windows x64 development environment.
 
 ## Titlebar redesign checks

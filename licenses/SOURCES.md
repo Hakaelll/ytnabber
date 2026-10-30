@@ -32,4 +32,4 @@ The pinned registry also contains the exact source URLs, cryptographic hashes an
 
 ## Application dependencies
 
-package-lock.json and src-tauri/Cargo.lock record the exact JavaScript and Rust dependencies. Their source packages include individual license metadata. ytnabber's GitHub release tag identifies the application source used to build its installer.
+package-lock.json and src-tauri/Cargo.lock record the exact JavaScript and Rust dependencies. Their source packages include individual license metadata. The repository's versioned source and Git history identify the build materials; publishing a GitHub release/tag is a separate distribution step.

@@ -9,17 +9,17 @@ this is not a claim of full Windows 10/11 certification.
 
 | Measured component | 0.1.0 MiB | 0.1.1 MiB | Change |
 | --- | ---: | ---: | ---: |
-| Downloadable NSIS installer | 103.89 | 64.05 | -38.35% |
+| Downloadable NSIS installer | 103.89 | 64.06 | -38.34% |
 | Application payload | 278.98 | 154.47 | -44.63% |
 | All engine resources | 271.24 | 145.82 | -46.24% |
 | FFmpeg/FFprobe binaries and their DLLs | 155.21 | 29.67 | -80.89% |
 | Deno | 93.54 | 93.54 | unchanged |
 | yt-dlp | 22.48 | 22.48 | unchanged |
-| Native executable with embedded frontend | 7.46 | 8.36 | +12.04% |
-| Central licenses and notices | 0.28 | 0.30 | +6.72% |
+| Native executable with embedded frontend | 7.46 | 8.36 | +12.05% |
+| Central licenses and notices | 0.28 | 0.30 | +6.74% |
 
-Installer reduction: **41,782,507 bytes (39.85 MiB)**. Application payload
-reduction: **130,555,670 bytes (124.51 MiB)**. The native executable grew
+Installer reduction: **41,771,708 bytes (39.84 MiB)**. Application payload
+reduction: **130,554,594 bytes (124.51 MiB)**. The native executable grew
 0.90 MiB with the functional/update changes; the overall package still
 shrunk substantially. This is a reduction of real uncompressed engine code,
 not just a different installer compression setting.
@@ -93,16 +93,24 @@ yt-dlp/Deno/FFmpeg descendants and cancellation.
 | Real Deno/EJS | Bundled Deno recognized and actual EJS solving asserted during a complete public YouTube reference download; same pinned yt-dlp/Deno binaries as the final package |
 | MP3/M4A/Opus and VP9/Opus conversion | Real outputs, FFprobe and complete decoding passed; cached conversion reuse and MP3 cover art checked |
 | Cancellation | Active transfer and live FFmpeg conversion cancelled; files unlocked for cleanup |
+| Interrupted download | With the final installer engines and isolated PATH, a persisted 32 KiB partial resumed; completed bytes matched the original downloaded MP4 exactly |
 | Error cases | Missing tools, corrupt input, processing failure, HTTP 404, HTTP 429, format mismatch and file protection covered |
 | Rate limit | Local server observed exactly one request on 429; state tests enforce cooldown |
 | Updater | Official 2026.10.21 to 2026.10.26 update and rollback passed in isolation; original bundled fixture byte-identical |
 | Distribution integrity | All 35 application payload files checked against the extracted NSIS installer; engine checksums matched |
 | Native bundle marker | Tauri changes only `BUNDLE_TYPE_VAR_UNK` to `BUNDLE_TYPE_VAR_NSS` in the packaged executable; remaining bytes match the build output |
-| Visual identity sources | Git diff confirmed artwork, icons, CSS, graphics/animation code and emblem point data unchanged |
+| Visual identity sources | Artwork, icons, graphics/animation code and emblem point data unchanged; the remote titlebar/glass refinements were preserved during final integration |
 
 The public HD source is Blender Foundation's
 [Big Buck Bunny reference](https://www.youtube.com/watch?v=aqz-KE-bpKQ).
 Only short samples were downloaded for the HD check, not the complete film.
+The additional resume fixture initially failed because small cancelled
+transfers remained buffered in Python, then because informational messages
+were suppressed or read from stderr only. The corrected fixture seeds a
+known persisted prefix and explicitly checks stdout/stderr plus byte identity.
+It does not claim that every cancelled small transfer has already flushed
+downloaded bytes to disk. The complete corrected transfer/conversion/cancel/
+resume/404 test passed using the final extracted installer engines.
 The short YouTube reference is `jNQXAC9IVRw`; direct-media checks use the
 public W3Schools `mov_bbb.mp4`. Tests do not use accounts, cookies or external
 PO-token providers and are run sequentially. The Windows compatible pixel
@@ -113,7 +121,7 @@ format policy follows the [Media Foundation H.264 decoder constraints](https://l
 - WebView2 is shared, not bundled or duplicated by YTNabber. The current host's
   installed WebView2 156.0.4314.50 directory measures 914,606,303 bytes
   (872.24 MiB, 919 files). This is an existing system component, not part of
-  the 64.05 MiB installer or 154.47 MiB app payload. A clean Windows system
+  the 64.06 MiB installer or 154.47 MiB app payload. A clean Windows system
   without WebView2 needs Microsoft's runtime, downloaded by the unchanged
   bootstrapper strategy; its size/version can vary.
 - A controlled `yt-dlp --version` run with an isolated TEMP observed a peak
@@ -132,10 +140,10 @@ format policy follows the [Media Foundation H.264 decoder constraints](https://l
 ### Installer and pending verification
 
 Artifact: `src-tauri/target/release/bundle/nsis/ytnabber_0.1.1_x64-setup.exe`.
-Exact size: **67,159,137 bytes**.
+Exact size: **67,169,936 bytes**.
 
 SHA-256:
-`ea4bb6668b88fcf2808ec60c74f7d1f3d107e27fe75a2e46165cfde641385835`.
+`713e04b87921bc1d706de1ebcf710a2af6d32c36124a8dcc9352f77273419463`.
 
 NSIS remains per-user with the existing icon, template/configuration,
 shortcuts and uninstall behavior. Its generated file list contains only
@@ -167,7 +175,11 @@ Standards/spec review was performed in the current agent against `82db38b`
 and the supplied update prompt. It caught the lavfi omission, 10-bit H.264
 compatibility and cover-art classification issues; each was corrected with
 focused checks. No framework migration, account integration, telemetry or
-visual redesign was introduced.
+visual redesign was introduced by this engine/size update. The independent
+remote commits `24ee86d` and `a3ac03f` were merged without conflicts and their
+titlebar/glass refinements retained; the installer was then rebuilt. Their
+historical browser verification is recorded separately in VERIFICATION.md;
+no browser or native UI automation was run during this final integration.
 
 ## Baseline (29 October 2026, before source changes)
 
